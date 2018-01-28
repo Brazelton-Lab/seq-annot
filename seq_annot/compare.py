@@ -108,7 +108,7 @@ def main():
                 if name not in abundances:
                     abundances[name] = [0 for i in sample_names]
 
-                abundances[name][position] = int(abundance)
+                abundances[name][position] = float(abundance)
 
 
     # Output header
