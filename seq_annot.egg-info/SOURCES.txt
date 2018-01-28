@@ -1,0 +1,17 @@
+README.md
+setup.cfg
+setup.py
+seq_annot/__init__.py
+seq_annot/annotate.py
+seq_annot/combine.py
+seq_annot/compare.py
+seq_annot/count.py
+seq_annot/screen.py
+seq_annot/seqio.py
+seq_annot.egg-info/PKG-INFO
+seq_annot.egg-info/SOURCES.txt
+seq_annot.egg-info/dependency_links.txt
+seq_annot.egg-info/entry_points.txt
+seq_annot.egg-info/not-zip-safe
+seq_annot.egg-info/requires.txt
+seq_annot.egg-info/top_level.txt
