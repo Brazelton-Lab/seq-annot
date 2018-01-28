@@ -130,7 +130,7 @@ def screen_snp(hit, acc, snps, header, only_snp=False):
     try:
         mutations = snps[acc]
     except KeyError:
-        print("warning: '{}' not found in the database of SNPs".format(acc), \
+        print("warning: {} not found in the database of SNPs".format(acc), \
               file=sys.stderr)
 
         if only_snp:
@@ -330,7 +330,7 @@ def main():
             try:
                 sub_entry = mapping[subject]
             except KeyError:
-                print("error: subject id '{}' not found in the relational "
+                print("error: subject id {} not found in the relational "
                       "database".format(subject), file=sys.stderr)
                 sys.exit(1)
 
@@ -338,9 +338,17 @@ def main():
                 try:
                     score = sub_entry[score_field]
                 except KeyError:
-                    print("error: field '{}' not found in the relational "
+                    print("error: field {} not found in the relational "
                           "database".format(score_field), file=sys.stderr)
                     sys.exit(1)
+                else:
+                    try:
+                        score = float(score)
+                    except ValueError:  #no value in field
+                        print("warning: no value for {} in {}. Skipping "
+                              "screening for {}".format(score_field, \
+                              subject, hit.query), file=sys.stderr)
+                        continue
 
             else:
                 score = 0

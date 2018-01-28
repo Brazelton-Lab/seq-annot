@@ -66,7 +66,7 @@ def invert_strand(iv):
    elif iv2.strand == "-":
       iv2.strand = "+"
    else:
-      print("error: unknown strand value '{}'".format(iv2), file=sys.stderr)
+      print("error: unknown strand value {}".format(iv2), file=sys.stderr)
       sys.exit(1)
    return iv2
 
@@ -328,7 +328,7 @@ def main():
             try:
                 feature_id = f.attr[id_field]
             except KeyError:
-                print("error: attribute '{}' not found for feature '{}'"\
+                print("error: attribute {} not found for feature '{}'"\
                       .format(id_field, f.name), file=sys.stderr)
                 continue
 
@@ -356,7 +356,7 @@ def main():
         sys.exit(1)
 
     if not has_length and args.norm != 'none':
-        print("warning: feature length field '{}' not found in the relational "
+        print("warning: feature length field {} not found in the relational "
               "database. Using feature interval as feature length for "
               "normalization instead. This may affect accuracy of the "
               "abundance estimates".format('gene_length'), file=sys.stderr)
@@ -373,7 +373,7 @@ def main():
     try:
         read_seq = align_reader(args.alignment_file)
     except:
-        print("error: unable to read '{}'. Please verify that the formatting "
+        print("error: unable to read {}. Please verify that the formatting "
               "is correct".format(args.alignment_file), file=sys.stderr)
         sys.exit(1)
     else:
@@ -550,7 +550,7 @@ def main():
             try:
                 feature_map = mapping[feature]
             except KeyError:
-                print("warning: feature '{}' not found in relational database"\
+                print("warning: feature {} not found in relational database"\
                       .format(feature), file=sys.stderr)
 
                 if not category_only:
@@ -561,7 +561,7 @@ def main():
             try:
                 category = feature_map[category_field]
             except KeyError:
-                print("warning: unknown feature category '{}' specified"\
+                print("warning: unknown feature category {} specified"\
                       .format(category_field), file=sys.stderr)
 
                 if not category_only:

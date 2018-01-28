@@ -100,7 +100,7 @@ def main():
                 try:
                     name, abundance = row
                 except:
-                    raise FormatError("input file '{}' does not have the "
+                    raise FormatError("input file {} does not have the "
                                       "correct number of columns. Please "
                                       "verify that that the file is formatted "
                                       "correctly".format(csv_file))

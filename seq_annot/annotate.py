@@ -156,7 +156,7 @@ def main():
                     try:
                         sub_entry = mapping[name]
                     except KeyError:
-                        print("error: '{}' not found in the relational "
+                        print("error: {} not found in the relational "
                               "database".format(name), file=sys.stderr)
                         sys.exit(1)
 
@@ -164,7 +164,7 @@ def main():
                         try:
                             add_annots.append((i, sub_entry[i]))
                         except KeyError:
-                            print("error: field '{}' not found in the "
+                            print("error: field {} not found in the "
                                   "relational database", file=sys.stderr)
                             sys.exit(1)
 
