@@ -108,7 +108,7 @@ def main():
                 if name not in abundances:
                     abundances[name] = [0 for i in sample_names]
 
-                abundances[name][position] = abundance
+                abundances[name][position] = int(abundance)
 
 
     # Output header
@@ -117,7 +117,8 @@ def main():
 
     # Output feature abundances by sample
     for feature in sorted(abundances):
-        out_h("{}\t{}\n".format(feature, '\t'.join(abundances[feature])))
+        out_h("{}\t{}\n".format(feature, '\t'.join([str(i) for i in \
+              abundances[feature]])))
 
 
     # Output statistics
