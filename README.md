@@ -1,5 +1,5 @@
 # seq-annot
-Tools to fascilitate annotation and comparison of genomes and metagenomes
+Tools to facilitate annotation and comparison of genomes and metagenomes
 
 ## About
 
