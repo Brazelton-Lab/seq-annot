@@ -106,7 +106,7 @@ def main():
                                       "correctly".format(csv_file))
 
                 if name not in abundances:
-                    abundances[name] = [0 for i in sample_names]
+                    abundances[name] = [float(0) for i in sample_names]
 
                 abundances[name][position] = float(abundance)
 
@@ -117,8 +117,8 @@ def main():
 
     # Output feature abundances by sample
     for feature in sorted(abundances):
-        out_h("{}\t{}\n".format(feature, '\t'.join([str(i) for i in \
-              abundances[feature]])))
+        out_h("{}\t{}\n".format(feature, '\t'.join(['{0:.2f}'.format(i) for i \
+              in abundances[feature]])))
 
 
     # Output statistics
