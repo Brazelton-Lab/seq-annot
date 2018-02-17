@@ -93,8 +93,8 @@ def main():
         metavar='FIELD [,FIELD,...]',
         action=ParseSeparator,
         sep=',',
-        help="fields from the relational database that should be included as "
-             "attributes, if relevant")
+        help="comma-separated list of fields from the relational database "
+             "that should be included as attributes, if relevant")
     parser.add_argument('-p', '--precedence',
         choices=['order', 'quality'],
         default='quality',
@@ -106,6 +106,10 @@ def main():
     parser.add_argument('--filter',
         action='store_true',
         help="do not output unannotated features [default: no filtering]")
+    parser.add_argument('-d', '--descarded',
+        action=Open,
+        mode='wt',
+        help="output discared hits")
     parser.add_argument('--keep-attrs',
         dest='keep',
         action='store_true',
