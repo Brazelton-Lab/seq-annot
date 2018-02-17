@@ -395,7 +395,7 @@ def main():
     lowqual = 0  #reads not passing minimum threshold for alignment quality
     nonunique = 0  #reads having multiple alignments with similar score
     aln_totals = 0  #total reads
-    mapped_totals = 0  #correctly mapped
+    mapped_totals = 0  #correctly mapped to a feature
     fld = []  #fragment length / insert-size distribution 
 
     for r in read_seq:
@@ -520,10 +520,12 @@ def main():
         scaling_factor = None
     elif args.norm == 'fpkm':
         norm_method = scale_abundance_fpkm
-        scaling_factor = mapped_totals
+        # scaling factor = all mapped reads
+        scaling_factor = mapped_totals + empty + ambiguous + nonunique
     elif args.norm == 'tpm':
         norm_method = scale_abundance_tpm
-        scaling_factor = sum([counts[i]['count'] / counts[i]['length'] for i in counts])
+        scaling_factor = sum([counts[i]['count'] / counts[i]['length'] for i \
+                             in counts])
     elif args.norm == 'biomass':
         norm_method = scale_abundance_biomass  #not supported yet
         scaling_factor = None
