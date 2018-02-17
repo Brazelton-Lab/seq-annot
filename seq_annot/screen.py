@@ -42,6 +42,7 @@ from arandomness.argparse import Open, ParseSeparator
 import argparse
 from bio_utils.iterators import b6_iter
 import json
+import re
 import sys
 import textwrap
 from time import time
@@ -50,70 +51,30 @@ __author__ = "Christopher Thornton"
 __license__ = 'GPLv3'
 __maintainer__ = 'Christopher Thornton'
 __status__ = "Alpha"
-__version__ = "0.1.1"
+__version__ = "0.2.0"
 
 
-def parse_snps_file(in_h, line=None):
+def screen_aln_quality(hit, evalue=10, identity=0, length=0, score=0):
     """
-    Parse an SNPs file. Each line should have six columns, corresponding to 
-    accession number, model type, parameter type, position of SNP, wildtype 
-    base composition, and mutant base composition. The header will be 
-    ignored, if present.
+    Screen results of a homology search based on alignment quality metrics.
+
+    Args:
+        hit (B6Entry): Class containing all B6/M8 data
+
+        evalue (float): expect value maximum [default: 10]
+
+        identity (float): minimum percentage identity shared between query and 
+            subject [default: 0]
+
+        length (int): minimum length of the alignment [default: 0]
+
+        score (int): bit-score threshold [default: 0]
+
+    Returns:
+        bool: True if hit passes screening else False
     """
-
-    append = list.append
-    join = str.join
-    strip = str.strip
-
-    if line is None:
-        line = next(in_h)  # Read header
-
-    # Check if input is text or bytestream
-    if (isinstance(line, bytes)):
-        def next_line(i):
-            return next(i).decode('utf-8')
-
-        line = line.decode('utf-8')
-    else:
-        next_line = next
-
-    # Check if first line is header
-    if line.startswith('#'):
-        split_line = strip(next_line(in_h)).split('\t')
-    else:
-        split_line = strip(line).split('\t')
-
-    snp_dict = {}
-    try:
-
-        while True:  #loop until StopIteration raised
-
-            try:
-                acc, mt, pt, position, wildtype, mutant = split_line
-            except ValueError:
-                raise FormatError("a tabular SNP file is required with six "
-                                  "columns, corresponding to accession #, "
-                                  "model type, parameter type, position, and "
-                                  "wildtype and mutatant alleles")
-
-            try:
-                snp_dict[acc].append((position, wildtype, mutant))
-            except KeyError:
-                snp_dict[acc] = [(position, wildtype, mutant)]
-
-            split_line = strip(next_line(in_h)).split('\t')
-
-    except StopIteration:
-
-        return snp_dict
-
-
-def screen_aln_quality(hit, e=10, ident=0, cov=0, score=0):
-    """
-    Screen reference match based on alignment quality metrics.
-    """
-    condition = (hit.evalue <= e and hit.perc_identical >= ident and \
-                 hit.align_len >= cov and hit.bit_score >= float(score))
+    condition = (hit.evalue <= evalue and hit.perc_identical >= identity and \
+                 hit.align_len >= length and hit.bit_score >= float(score))
 
     if condition:
         return True
@@ -121,76 +82,80 @@ def screen_aln_quality(hit, e=10, ident=0, cov=0, score=0):
         return False
 
 
-def screen_snp(hit, acc, snps, header, only_snp=False):
+def screen_snp(hit, snps, only_snp=False):
     """
-    Screen reference match for alternative phenotype-conferring SNPs using 
-    a dictionary of accession number, SNP value pairs.
+    Screen results of a homology search for alternative phenotype-conferring 
+    SNPs.
+
+    Args:
+        hit (B6Entry): Class containing all B6/M8 data 
+
+        snps (list): List of SNPs with format <wild-type residue>
+            <position><mutant residue> (e.g. A256G)
+
+        only_snps (bool): Returns False when SNP information is not available
+            for the query subject
+
+    Returns:
+        bool: True if hit passes screening else False
     """
+    SNP = re.compile("([A-Z])([0-9]+)([A-Z])")
 
-    try:
-        mutations = snps[acc]
-    except KeyError:
-        print("warning: {} not found in the database of SNPs".format(acc), \
-              file=sys.stderr)
-
+    # Handle case where no SNPs are available for the given subject
+    if not snps:
         if only_snp:
             return False
         else:
             return True
 
-    else:
+    try:
+        qseq = hit.add_specs['qseq']
+    except KeyError:
+        print("error: the format specifier 'qseq' is required for "
+              "secondary screening of SNPs".format(), file=sys.stderr)
+        sys.exit(1)
 
+    try:
+        sseq = hit.add_specs['sseq']
+    except KeyError:
+        print("error: the format specifier 'sseq' is required for "
+              "secondary screening of SNPs".format(), file=sys.stderr)
+        sys.exit(1)
+
+    start = int(hit.subject_start)
+    end = int(hit.subject_end)
+
+    match = False
+    for snp in snps:
         try:
-            qseq_index = header.index('qseq') - 12  #minus required indices
-            qseq = hit.add_specs[qseq_index]
-        except KeyError:
-            print("error: the format specifier 'qseq' is required for "
-                  "secondary screening of SNPs".format(), file=sys.stderr)
+            wt, pos, sub = SNP.search(snp).groups()
+        except AttributeError:
+            print("error: SNP {} from subject {} is formatted incorrectly. "
+                  "Please see the help message for formatting requirements."\
+                  .format(snp, hit.subject))
             sys.exit(1)
 
-        try:
-            sseq_index = header.index('sseq') - 12
-            sseq = hit.add_specs[sseq_index]
-        except KeyError:
-            print("error: the format specifier 'sseq' is required for "
-                  "secondary screening of SNPs".format(), file=sys.stderr)
-            sys.exit(1)
+        pos = int(pos)
 
-        start = int(hit.subject_start)
-        end = int(hit.subject_end)
+        if pos not in list(range(start, end + 1)):
+            continue
 
-        for mutation in mutations:
-            pos, wt, sub = mutation
-            pos = int(pos)
+        else:
+            rel_pos = pos - start  #position of snp relative to alignment
 
-            if pos not in list(range(start, end + 1)):
-                return False
-
-            else:
-                rel_pos = pos - start  #position of snp relative to alignment
-
-                # Handle any gaps
-                i = 0
-                while i != (rel_pos + 1):
-                    if sseq[i] == '-':
-                        rel_pos += 1
-                        i += 1
-                    else:
-                        i += 1
-
-                # Handle database inconsistencies
-                if sseq[rel_pos] != wt:
-                    print("warning: possible inconsistency in database: "
-                          "subject {} with residue {} at SNP position {!s} "
-                          "does not match wildtype residue {}"\
-                          .format(hit.subject, sseq[rel_pos], pos, wt), \
-                          file=sys.stderr)
-                    return False
-
-                if qseq[rel_pos] == sub:
-                    return True
+            # Handle gaps
+            i = 0
+            while i != (rel_pos + 1):
+                if sseq[i] == '-':
+                    rel_pos += 1
+                    i += 1
                 else:
-                    return False
+                    i += 1
+
+            if qseq[rel_pos] == sub:
+                match = True
+                    
+    return match
 
 
 def main():
@@ -219,55 +184,54 @@ def main():
              "pident, length, mismatch, gapopen, qstart, qend, sstart, send, "
              "evalue, bitscore]. The additional field specifiers 'qseq' and "
              "'sseq' are required when screening for SNPs")
-    screen_method = parser.add_argument_group(title="screening parameters")
-    screen_method.add_argument('-e', '--evalue',
-        type=float,
-        default=10,
-        help="maximum expect value allowed for a hit to be retained [default: "
-             "10]")
-    screen_method.add_argument('-m', '--mapping',
+    parser.add_argument('-m', '--mapping',
         metavar='mapping.json',
         dest='map_file',
         action=Open,
         mode='rb',
-        help="input relational database in JSON format containing "
-             "model-specific bit-score or alternative scoring thresholds")
-    screen_method.add_argument('-f', '--score-field',
+        help="input relational database in JSON format. Required when "
+             "screening for SNPs or alignment quality using bitscore or "
+             "model-specific scoring thresholds")
+    screen_method = parser.add_argument_group(title="screening parameters")
+    screen_method.add_argument('-e', '--evalue',
+        metavar='VALUE',
+        type=float,
+        default=10,
+        help="maximum expect value allowed for a hit to be retained [default: "
+             "10]")
+    screen_method.add_argument('-b', '--bitscore',
+        metavar='FIELD',
         dest="score_field",
-        help="field in the relational database to extract the alignment "
-             "quality thresholds from")
-    screen_method.add_argument('-c', '--category-field',
-        dest="cat_field",
-        default="gene_family",
-        help="field in the relational database to extract the category "
-             "accessions from [default: gene_family]")
+        help="field in the relational database containing scoring thresholds "
+             "that will be used to screen alignment quality. Argument must be "
+             "used in conjunction with -m/--mapping")
     screen_method.add_argument('-i', '--identity',
+        metavar='PERCENT',
         type=float,
         default=0,
         help="minimum percent identity required to retain a hit [default: 0]")
     screen_method.add_argument('-l', '--length',
+        metavar='LENGTH',
         dest='aln_len',
         type=int,
         default=0,
-        help="minimum alignment length required to retain a hit [default: 0]. "
-             "Should ideally be used with --identity, as alignment length is "
-             "not useful on its own")
+        help="minimum alignment length required to retain a hit [default: 0]")
     screen_method.add_argument('-a', '--alleles',
-        metavar='snps.csv',
-        dest="snps",
-        action=Open,
-        mode='rb',
-        help="tabular file containing SNPs (position, along with the wildtype "
-             "and mutant alleles) that confer alternative phenotypes to an "
-             "organism. This step can only be used with -m/--mapping and will "
-             "be performed last if any additional screening for alignment "
-             "quality is also specified")
-    screen_method.add_argument('--snp',
+        metavar='FIELD',
+        dest="snp_field",
+        help="field in the relational database containing SNPs conferring an "
+             "alternative phenotype to an organism. The field should contain "
+             "a list of one or more SNPS with format <wild-type "
+             "residue><position><mutant residue> (e.g. A254G). Argument must "
+             "be used in conjunction with -m/--mapping. Screening for SNPs "
+             "will be performed after alignment quality screening")
+    output_flags = parser.add_argument_group(title="output control flags")
+    output_flags.add_argument('--snp',
         dest='only_snp',
         action='store_true',
-        help="only output matches if found in the database of SNPs [default: "
-             "False]")
-    parser.add_argument('--defaults',
+        help="only output matches if the matches have corresponding SNPs "
+             "[default: False]")
+    output_flags.add_argument('--defaults',
         dest='default_format',
         action='store_true',
         help="only output default BLAST+ specifiers [default: output all]")
@@ -276,17 +240,18 @@ def main():
         version='%(prog)s ' + __version__)
     args = parser.parse_args()
 
-    if not (args.map_file or args.evalue or args.snps or args.aln_len or \
-            args.identity):
-        parser.error("error: one or more of the following arguments are "
-                     "required: -s/--snps, -e/--evalue, -m/--mapping, "
+    if not (args.evalue or args.snp_field or args.aln_len or args.identity or \
+            args.score_field):
+        parser.error("error: one or more of the following arguments is "
+                     "required: -a/--alleles, -e/--evalue, -b/--bitscore, "
                      "-i/--identity, or -l/--length")
 
-    if args.snps and not args.map_file:
-        parser.error("error: -m/--mapping required when -s/--snps is supplied")
+    if args.snp_field and not args.map_file:
+        parser.error("error: -m/--mapping required when -a/--alleles is "
+                     "supplied")
 
     if args.score_field and not args.map_file:
-        parser.error("error: -m/--mapping required when -f/--score-field is "
+        parser.error("error: -m/--mapping required when -b/--bitscore is "
                      "supplied")
 
 
@@ -308,16 +273,14 @@ def main():
     if args.map_file:
         mapping = json.load(args.map_file)
 
-    snps = parse_snps_file(args.snps) if args.snps else None
-
-    only_snp = args.only_snp
     specifiers = args.format
     score_field = args.score_field
-    cat_field = args.cat_field
+    snp_field = args.snp_field
     e_thresh = args.evalue
     id_thresh = args.identity
     len_thresh = args.aln_len
     default_only = True if args.default_format else False
+    only_snp = args.only_snp
 
 
     # Screen hits for alignment quality and/or mutant alleles
@@ -334,42 +297,39 @@ def main():
                       "database".format(subject), file=sys.stderr)
                 sys.exit(1)
 
-            if score_field:
-                try:
-                    score = sub_entry[score_field]
-                except KeyError:
-                    print("error: field {} not found in the relational "
-                          "database".format(score_field), file=sys.stderr)
-                    sys.exit(1)
-                else:
-                    try:
-                        score = float(score)
-                    except ValueError:  #no value in field
-                        print("warning: no value for {} in {}. Skipping "
-                              "screening for {}".format(score_field, \
-                              subject, hit.query), file=sys.stderr)
-                        continue
-
+        if score_field:
+            try:
+                score = sub_entry[score_field]
+            except KeyError:
+                print("error: field {} not found for {} in the relational "
+                      "database".format(score_field, subject), file=sys.stderr)
+                sys.exit(1)
             else:
-                score = 0
+                try:
+                    score = float(score)
+                except ValueError:  #no value in field
+                    print("warning: no value for {} in field {}. Setting "
+                          "scoring threshold to 0.".format(score_field, \
+                          subject, hit.query), file=sys.stderr)
+                    score = 0
 
         else:
             score = 0
 
-        q_pass = screen_aln_quality(hit, e=e_thresh, score=score, \
-                                    ident=id_thresh, cov=len_thresh)
+        q_pass = screen_aln_quality(hit, evalue=e_thresh, score=score, \
+                                    identity=id_thresh, length=len_thresh)
 
         if q_pass:
-            if snps:
+            if snp_field:
                 try:
-                    cat_acc = sub_entry[cat_field]
-                except UnboundLocalError:
-                    print("error: no entry in the relational database for {}"\
-                          .format(subject), file=sys.stderr)
+                    snps = sub_entry[snp_field]
+                except KeyError:
+                    print("error: field {} not found for {} in the relational "
+                          "database".format(snp_field, subject), \
+                          file=sys.stderr)
                     sys.exit(1)
 
-                s_pass = screen_snp(hit, cat_acc, snps, header=specifiers, \
-                                    only_snp=only_snp)
+                s_pass = screen_snp(hit, snps, only_snp=only_snp)
 
                 if s_pass:
                     passed_total += 1
