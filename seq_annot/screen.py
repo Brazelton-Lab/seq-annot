@@ -158,6 +158,10 @@ def screen_snp(hit, snps, only_snp=False):
     return match
 
 
+def do_nothing(*args):
+    pass
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -225,16 +229,21 @@ def main():
              "residue><position><mutant residue> (e.g. A254G). Argument must "
              "be used in conjunction with -m/--mapping. Screening for SNPs "
              "will be performed after alignment quality screening")
-    output_flags = parser.add_argument_group(title="output control flags")
-    output_flags.add_argument('--snp',
+    output_control = parser.add_argument_group(title="output control options")
+    output_control.add_argument('--snp',
         dest='only_snp',
         action='store_true',
         help="only output matches if the matches have corresponding SNPs "
              "[default: False]")
-    output_flags.add_argument('--defaults',
+    output_control.add_argument('--defaults',
         dest='default_format',
         action='store_true',
         help="only output default BLAST+ specifiers [default: output all]")
+    output_control.add_argument('-d', '--discarded',
+        metavar='out.b6',
+        action=Open,
+        mode='wt',
+        help="output discarded hits to file")
     parser.add_argument('--version',
         action='version',
         version='%(prog)s ' + __version__)
@@ -254,7 +263,6 @@ def main():
         parser.error("error: -m/--mapping required when -b/--bitscore is "
                      "supplied")
 
-
     # Output run information
     all_args = sys.argv[1:]
     print("{} {!s}".format('screen_features', __version__), file=sys.stderr)
@@ -262,16 +270,14 @@ def main():
           .format(' '.join(all_args)), 79), file=sys.stderr)
     print("", file=sys.stderr)
 
-
     # Track program run-time
     start_time = time()
 
-
     # Assign variables based on user inputs
     out_h = args.out.write
+    out_d = args.discarded.write if args.discarded else do_nothing
 
-    if args.map_file:
-        mapping = json.load(args.map_file)
+    mapping = json.load(args.map_file) if args.map_file else None
 
     specifiers = args.format
     score_field = args.score_field
@@ -282,14 +288,15 @@ def main():
     default_only = True if args.default_format else False
     only_snp = args.only_snp
 
-
     # Screen hits for alignment quality and/or mutant alleles
     passed_total = 0
+    failed_qual = 0
+    failed_snp = 0
     for totals, hit in enumerate(b6_iter(args.b6, header=specifiers)):
 
         subject = hit.subject
 
-        if args.map_file:
+        if mapping:
             try:
                 sub_entry = mapping[subject]
             except KeyError:
@@ -334,23 +341,38 @@ def main():
                 if s_pass:
                     passed_total += 1
                     out_h(hit.write(defaults=default_only))
+                else:
+                    failed_snp += 1
+                    out_d(hit.write(defaults=default_only))
 
             else:
                 passed_total += 1
                 out_h(hit.write(defaults=default_only))
 
+        else:
+            failed_qual += 1
+            out_d(hit.write(defaults=default_only))
+
 
     # Output screening statistics
-    print("Total number of matches:\t{!s}".format(totals), \
+    print("Total number of alignments:\t{!s}".format(totals), \
           file=sys.stderr)
-    print("  - matches that passed screening:\t{!s}\n".format(passed_total), \
+    print("  - alignments that passed screening:\t{!s}".format(passed_total), \
           file=sys.stderr)
-    
-
+    print("  - alignments that failed screening:\t{!s}".format(totals - \
+          passed_total), file=sys.stderr)
+    if snp_field:
+        print("    - by alignment quality:\t{!s}".format(failed_qual), \
+              file=sys.stderr)
+        print("    - by secondary SNP screening:\t{!s}\n".format(failed_snp), \
+              file=sys.stderr)
+    else:
+        print("")
+ 
     # Calculate and print program run-time
     end_time = time()
     total_time = (end_time - start_time) / 60.0
-    print("It took {:.2e} minutes to screen {!s} matches\n"\
+    print("It took {:.2e} minutes to screen {!s} alignments\n"\
           .format(total_time, totals), file=sys.stderr)
 
 
