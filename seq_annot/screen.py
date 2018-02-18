@@ -353,8 +353,8 @@ def main():
             failed_qual += 1
             out_d(hit.write(defaults=default_only))
 
-
     # Output screening statistics
+    totals += 1
     print("Total number of alignments:\t{!s}".format(totals), \
           file=sys.stderr)
     print("  - alignments that passed screening:\t{!s}".format(passed_total), \
