@@ -50,6 +50,10 @@ __status__ = "Alpha"
 __version__ = '0.0.1'
 
 
+def do_nothing(args):
+    pass
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -64,6 +68,18 @@ def main():
         default=sys.stdout,
         help="output combined features in GFF3 format [default: output to "
              "stdout]")
+    parser.add_argument('-p', '--precedence',
+        choices=['order', 'none'],
+        default='none',
+        help="method to resolve overlapping features [default: none]. "
+             "Options are 'order' and 'none'. If 'order', precedence will "
+             "be determined by input file order.")
+    parser.add_argument('-d', '--discarded',
+        metavar='out.gff',
+        action=Open,
+        mode='wt',
+        help="output features in GFF3 format discarded due to overlapping "
+             "intervals")
     parser.add_argument('--version',
         action='version',
         version='%(prog)s ' + __version__)
@@ -81,6 +97,9 @@ def main():
 
     # Assign variables
     out_h = args.out.write
+    out_d = args.discarded.write if args.discarded else do_nothing
+
+    overlap_precedence = args.precedence
 
     gff_totals = 0
     overlap_totals = 0
@@ -89,23 +108,26 @@ def main():
     uniques = {}  #to store unique features
 
     # Output unique features
-    for gff in args.gffs:
+    for position, gff in enumerate(args.gffs):
 
         with open_input(gff) as gff_h:
-            for entry in gff3_iter(gff_h):
+            for feature in gff3_iter(gff_h):
 
                 try:
-                    seq_id = entry.seqid
+                    seq_id = feature.seqid
                 except AttributeError:
-                    if entry.startswith('##'):  #output headers
-                        out_h("{}\n".format(entry))
+                    if feature.startswith('##'):  #output headers
                         continue
-                    else:
+                    elif feature.startswith('#'):
                         continue  #don't output comments
+                    else:
+                        print("error: GFF3 file does not seem to be formatted "
+                              "correctly", file=sys.stderr)
+                        sys.exit(1)
 
-                start = entry.start
-                end = entry.end
-                strand = entry.strand
+                start = feature.start
+                end = feature.end
+                strand = feature.strand
                 
                 gff_totals += 1
 
@@ -113,34 +135,62 @@ def main():
                     chrom = uniques[seq_id]
                 except KeyError:
                     passed_totals += 1
-                    entry.attributes['ID'] = 'f{!s}'.format(passed_totals)
-                    uniques[seq_id] = [entry]  #first feature for given sequence
+                    uniques[seq_id] = [(position, feature)]  #first feature
                     continue
 
-                is_unique = True  #assume unique
-                # Check if feature falls within the interval of another feature
-                for chrom_feat in chrom:
-                    # Allow features to overlap on different strands
-                    if strand != chrom_feat.strand:
-                        continue
+                if overlap_precedence == "order":
+                    is_unique = True  #assume unique
+                    # Check if feature falls within the interval of another
+                    for item in chrom:
+                        chrom_feat = item[1]
 
-                    interval = list(range(chrom_feat.start, chrom_feat.end + 1))
-                    if start in int_range or end in interval:
-                        overlap_totals += 1
-                        is_unique = False
-                        break  #found overlap, no need to continue
+                        # Allow overlap if from the same GFF3 file
+                        chrom_pos = item[0]
+                        if position == chrom_pos:
+                            continue
 
-                if is_unique:
-                    # Feature does not fall within the interval of another, so 
-                    # add to uniques
+                        # Allow features to overlap on different strands
+                        if (strand == '+' and chrom_feat.strand == '-') or \
+                            (strand == '-' and chrom_feat.strand == '+'):
+                            continue
+
+                        int_1 = list(range(chrom_feat.start, chrom_feat.end + 1))
+                        int_2 = list(range(start, end + 1))
+                        if ((int(start) in int_1) or (int(end) in int_1)) or \
+                            ((int(chrom_feat.start) in int_2) or \
+                            (int(chrom_feat.end) in int_2)):
+                            # Determine if feature is a child of existing feature
+                            if "Parent" in feature.attributes:
+                                parent = feature.attributes["Parent"]
+                                if parent == chrom_feat.attributes['ID']:
+                                    continue
+
+                            overlap_totals += 1
+                            is_unique = False
+                            break  #found overlap, no need to continue
+
+                    if is_unique:
+                        # Feature does not fall within the interval of another, so 
+                        # add to uniques
+                        passed_totals += 1
+                        uniques[seq_id].append((position, feature))
+                    else:
+                        out_d(feature.write())
+                else:
                     passed_totals += 1
-                    uniques[seq_id].append(entry)
+                    uniques[seq_id].append((position, feature))
+
 
     # Output combined GFF3
+    header = "##gff-version  3\n"
+    out_h(header)
+
     for chrom in sorted(uniques):
         chrom_feature = 0
-        for entry in chrom:
+        for item in uniques[chrom]:
             chrom_feature += 1
+
+            entry = item[1]
             entry.attributes['ID'] = '{}_{!s}'.format(entry.seqid, chrom_feature)
             out_h(entry.write())
 
