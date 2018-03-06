@@ -106,7 +106,7 @@ def main():
     parser.add_argument('--filter',
         action='store_true',
         help="do not output unannotated features [default: no filtering]")
-    parser.add_argument('-d', '--descarded',
+    parser.add_argument('-d', '--discarded',
         action=Open,
         mode='wt',
         help="output discared hits")
@@ -120,7 +120,6 @@ def main():
         version='%(prog)s ' + __version__)
     args = parser.parse_args()
 
-
     # Output run information
     all_args = sys.argv[1:]
     print("{} {!s}".format('annotate_features', __version__), file=sys.stderr)
@@ -128,10 +127,8 @@ def main():
           .format(' '.join(all_args)), 79), file=sys.stderr)
     print("", file=sys.stderr)
 
-
     # Track program run-time
     start_time = time()
-
 
     # Assign variables based on user inputs
     map_fields = args.fields
@@ -141,10 +138,9 @@ def main():
     if args.mapping:
         mapping = json.load(args.mapping)
 
-
+    # Parse results of the homology search
     hits_totals = 0
     conflict_totals = 0
-    # Parse results of the homology search
     hits = {}  #store matches and additional attributes
     for b6 in args.b6:
 
@@ -192,7 +188,6 @@ def main():
                     hits[hit.query] = {'evalue': hit.evalue, 'attr': [('Name',\
                                        name)] + add_annots}
 
-
     # Parse GFF file, adding annotations from homology search and relational db
     gff_totals = 0
     passed_totals = 0
@@ -235,15 +230,13 @@ def main():
 
         args.out.write(entry.write())
 
-
     # Calculate and print statistics
-    print("Total matches processed:\t{!s}".format(hits_totals), file=sys.stderr)
+    print("Total alignments processed:\t{!s}".format(hits_totals), file=sys.stderr)
     print("Total features processed:\t{!s}".format(gff_totals), file=sys.stderr)
-    print("  - features matching a single reference:\t{!s}".format(passed_totals), \
+    print("  - features aligned to a single reference:\t{!s}".format(passed_totals), \
           file=sys.stderr)
-    print("  - features with more than one matching reference:\t{!s}\n"\
+    print("  - features aligned to more than one reference:\t{!s}\n"\
           .format(conflict_totals), file=sys.stderr)
-
 
     # Calculate and print program run-time
     end_time = time()
