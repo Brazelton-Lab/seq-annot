@@ -149,6 +149,7 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('alignment_file',
         metavar='in.aln',
+        default=sys.stdin,
         help="input alignment file in SAM or BAM format")
     parser.add_argument('feature_file',
         metavar='in.gff3',
@@ -194,10 +195,8 @@ def main():
     parser.add_argument('-t', '--type', 
         metavar='TYPE', 
         dest='ftype',
-        default= 'CDS',
         help="feature type (3rd column in GFF file) to estimate abundance for "
-             "[default: CDS]. All features of other type will be ignored. Use "
-             "'all' to calculate abundance for features of any type")
+             "[default: count all]. All features of other type will be ignored")
     parser.add_argument('-a', '--attr', 
         metavar='ATTRIBUTE',
         default="Name",
@@ -254,10 +253,11 @@ def main():
         help="buffer size for paired reads in the alignment file if sorted by "
              "position [default: 3145728 (3GB)]. This value should be "
              "increased if memory issues are encountered")
-    parser.add_argument('--transcripts',
+    parser.add_argument('--cdna',
+        dest='transcripts',
         action='store_true',
-        help="features are transcripts [default: False]. Whether features are "
-             "transcripts or not will affect how the effective length of the "
+        help="sequences are of cDNA [default: False]. Whether sequences are of "
+             "gDNA or cDNA will affect how the effective length of a "
              "feature is calculated")
     parser.add_argument('--category-only',
         dest='cat_only',
@@ -269,10 +269,13 @@ def main():
         version='%(prog)s ' + __version__)
     args = parser.parse_args()
 
+    if not (args.category and args.map_file):
+        parser.error("error: -m/--mapping and -c/--category-field must be "
+                     "supplied together")
+
     if args.norm == "biomass" and not args.concentration:
         parser.error("error: -c/--concentration is required when "
                      "normalizing by biomass")
-
 
     # Output run information
     all_args = sys.argv[1:]
@@ -281,10 +284,8 @@ def main():
           .format(' '.join(all_args)), 79), file=sys.stderr)
     print("", file=sys.stderr)
 
-
     # Track program run-time
     start_time = time()
-
 
     # Assign variables based on user inputs
     out_h = args.out.write
@@ -304,7 +305,6 @@ def main():
 
     if args.map_file:
         mapping = json.load(args.map_file)
-
 
     # Iterate over GFF3 file, storing feature counts into a dictionary
     features = HTSeq.GenomicArrayOfSets("auto", False)
@@ -333,22 +333,24 @@ def main():
                 continue
 
             # Skip features of other type
-            if f.type == feature_type:
-
-                # Store feature length for normalization
-                if not args.map_file:
-                    feature_length = abs(f.iv.end - f.iv.start)
+            if feature_type: 
+                if f.type == feature_type:
+                    feature_type_totals += 1
                 else:
-                    try:
-                        feature_length = mapping[feature_id]['gene_length']
-                    except KeyError:
-                        has_length = False
-                        feature_length = abs(f.iv.end - f.iv.start)
+                    continue
 
-                features[f.iv] += feature_id  #for mapping alignments
-                counts[feature_id] = {'count': 0, 'length': feature_length}
+            # Store feature length for normalization
+            if not args.map_file:
+                feature_length = abs(f.iv.end - f.iv.start)
+            else:
+                try:
+                    feature_length = mapping[feature_id]['gene_length']
+                except KeyError:
+                    has_length = False
+                    feature_length = abs(f.iv.end - f.iv.start)
 
-                feature_type_totals += 1
+            features[f.iv] += feature_id  #for mapping alignments
+            counts[feature_id] = {'count': 0, 'length': feature_length}
 
     except:
         print("error: problem occured when processing GFF3 file at line ({})"
