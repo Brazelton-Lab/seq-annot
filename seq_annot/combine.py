@@ -69,7 +69,6 @@ def main():
         version='%(prog)s ' + __version__)
     args = parser.parse_args()
 
-
     # Output run information
     all_args = sys.argv[1:]
     print("{} {!s}".format('combine_features', __version__), file=sys.stderr)
@@ -77,10 +76,8 @@ def main():
           .format(' '.join(all_args)), 79), file=sys.stderr)
     print("", file=sys.stderr)
 
-
     # Track program run-time
     start_time = time()
-
 
     # Assign variables
     out_h = args.out.write
@@ -90,7 +87,6 @@ def main():
     passed_totals = 0
 
     uniques = {}  #to store unique features
-
 
     # Output unique features
     for gff in args.gffs:
@@ -114,35 +110,39 @@ def main():
                 gff_totals += 1
 
                 try:
-                    intervals = uniques[seq_id]
+                    chrom = uniques[seq_id]
                 except KeyError:
                     passed_totals += 1
                     entry.attributes['ID'] = 'f{!s}'.format(passed_totals)
-                    uniques[seq_id] = [(range(start, end), strand)]
-                    out_h(entry.write())
+                    uniques[seq_id] = [entry]  #first feature for given sequence
                     continue
 
                 is_unique = True  #assume unique
                 # Check if feature falls within the interval of another feature
-                for interval in intervals:
+                for chrom_feat in chrom:
                     # Allow features to overlap on different strands
-                    if strand != interval[1]:
+                    if strand != chrom_feat.strand:
                         continue
 
-                    int_range = list(interval[0])
-                    if start in int_range or end in int_range:
+                    interval = list(range(chrom_feat.start, chrom_feat.end + 1))
+                    if start in int_range or end in interval:
                         overlap_totals += 1
-                        is_unqiue = False
+                        is_unique = False
                         break  #found overlap, no need to continue
 
                 if is_unique:
                     # Feature does not fall within the interval of another, so 
-                    # add to uniques and write to output
+                    # add to uniques
                     passed_totals += 1
-                    entry.attributes['ID'] = 'f{!s}'.format(passed_totals)
-                    uniques[seq_id].append((range(start, end), strand))
-                    out_h(entry.write())
+                    uniques[seq_id].append(entry)
 
+    # Output combined GFF3
+    for chrom in sorted(uniques):
+        chrom_feature = 0
+        for entry in chrom:
+            chrom_feature += 1
+            entry.attributes['ID'] = '{}_{!s}'.format(entry.seqid, chrom_feature)
+            out_h(entry.write())
 
     # Calculate and print statistics
     print("Total features processed:\t{!s}".format(gff_totals), \
@@ -151,7 +151,6 @@ def main():
           .format(passed_totals), file=sys.stderr)
     print("  - features overlapping a higher precedence feature:\t{!s}\n"\
           .format(overlap_totals), file=sys.stderr)
-
 
     # Calculate and print program run-time
     end_time = time()
