@@ -8,7 +8,10 @@ Usage:
 
 Required input is a GFF3 file of predicted protein-coding genes and a tabular 
 file of pairwise alignments (B6 format). Optional input is a relational 
-database in JSON format containing additional information on a hit.
+database in JSON format containing additional information on a hit. It is 
+assumed that the query IDs in the alignment file are the sequence IDs in the 
+GFF3 file combined with the second part of the ID tag, separated by an 
+underscore.
 
 The compression algorithm is automatically detected for input files based on 
 the file extension. To compress output, add the appropriate file extension to 
@@ -52,6 +55,10 @@ __status__ = "Alpha"
 __version__ = "0.0.1"
 
 
+def do_nothing(*args):
+    pass
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -71,10 +78,11 @@ def main():
              "determined by input order")
     parser.add_argument('-m', '--mapping',
         metavar='in.json',
-        action=Open,
-        mode='rb',
-        help="input relational database in JSON format containing attribute "
-        "fields")
+        dest='map_files',
+        action=ParseSeparator,
+        sep=',',
+        help="input one or more relational databases in JSON format containing "
+        "attribute fields")
     parser.add_argument('-o', '--out',
         metavar='out.gff',
         action=Open,
@@ -102,15 +110,17 @@ def main():
              "Options are 'order' and 'quality'. If 'order', precedence will "
              "be determined by input file order. If 'quality', precedence "
              "will be given to the match with the highest quality alignment "
-             "as determined by e-value")
-    parser.add_argument('--filter',
+             "as determined by bitscore")
+    parser.add_argument('-d', '--default',
+        metavar='STR',
+        dest='prod_def',
+        help="default product for features without associated product "
+             "information")
+    output_control = parser.add_argument_group(title="output control options")
+    output_control.add_argument('--filter',
         action='store_true',
         help="do not output unannotated features [default: no filtering]")
-    parser.add_argument('-d', '--discarded',
-        action=Open,
-        mode='wt',
-        help="output discared hits")
-    parser.add_argument('--keep-attrs',
+    output_control.add_argument('--keep-attrs',
         dest='keep',
         action='store_true',
         help="do not overwrite existing attributes, but append new attributes "
@@ -119,6 +129,10 @@ def main():
         action='version',
         version='%(prog)s ' + __version__)
     args = parser.parse_args()
+
+    if not (args.fields and args.map_files):
+        parser.error("error: -m/--mapping and -f/--fields must be supplied "
+                     "together")
 
     # Output run information
     all_args = sys.argv[1:]
@@ -131,16 +145,31 @@ def main():
     start_time = time()
 
     # Assign variables based on user inputs
+    out_h = args.out.write
+
+    if args.map_files:
+        mapping = {}
+        for map_file in args.map_files:
+            json_map = json.load(map_file)
+            mapping = {**json_map, **mapping}
+    else:
+        mapping = None
+
     map_fields = args.fields
     match_precedence = args.precedence
     specifiers = args.format
+    feature_type = args.ftype
+    default_product = args.def_prod
 
-    if args.mapping:
-        mapping = json.load(args.mapping)
-
-    # Parse results of the homology search
+    # Initiate statistics variables
     hits_totals = 0
     conflict_totals = 0
+    no_map = 0
+    no_fields = {}
+    for map_field in map_fields:
+        map_fields[map_field] = 0
+
+    # Parse results of the homology search
     hits = {}  #store matches and additional attributes
     for b6 in args.b6:
 
@@ -149,26 +178,24 @@ def main():
 
                 hits_totals += 1
 
-                name = hit.subject
-                add_annots = []
+                subject = hit.subject
 
+                add_annots = []
                 if mapping:
                     try:
-                        sub_entry = mapping[name]
+                        sub_entry = mapping[subject]
                     except KeyError:
-                        print("error: {} not found in the relational "
-                              "database".format(name), file=sys.stderr)
-                        sys.exit(1)
+                        no_map += 1
+                    else:
+                        for field in map_fields:
+                            try:
+                                add_annots.append((field, sub_entry[field]))
+                            except KeyError:
+                                no_fields[field] += 1
 
-                    for i in map_fields:
-                        try:
-                            add_annots.append((i, sub_entry[i]))
-                        except KeyError:
-                            print("error: field {} not found in the "
-                                  "relational database", file=sys.stderr)
-                            sys.exit(1)
+                query = hit.query
 
-                if hit.query in hits:
+                if query in hits:
                     conflict_totals += 1
 
                     if match_precedence == 'order':
@@ -176,27 +203,28 @@ def main():
                         continue
                     else:
                         # Determine which match has the best alignment score
-                        prev_score = hits[hit.query]['evalue']
+                        prev_score = hits[query]['bitscore']
 
-                        if prev_score <= hit.evalue:
+                        if prev_score >= hit.bitscore:
                             continue  #existing match is best
                         else:
-                            hits[hit.query] = {'evalue': hit.evalue, 'attr':\
-                                               [('Name', name)] + add_annots}
+                            hits[query] = {'bitscore': hit.bitscore, 'attr': \
+                                           [('Name', name)] + add_annots}
 
                 else:
-                    hits[hit.query] = {'evalue': hit.evalue, 'attr': [('Name',\
-                                       name)] + add_annots}
+                    hits[query] = {'bitscore': hit.bitscore, 'attr': [('Name', \
+                                   name)] + add_annots}
 
     # Parse GFF file, adding annotations from homology search and relational db
     gff_totals = 0
     passed_totals = 0
+    feature_type_totals = 0
     for entry in gff3_iter(args.gff, parse_attr=True, headers=True):
         try:
             seq_id = entry.seqid
         except AttributeError:
             if entry.startswith('##'):
-                args.out.write("{}\n".format(entry))
+                out_h("{}\n".format(entry))
                 continue
             else:
                 continue  #don't output comments
@@ -207,34 +235,58 @@ def main():
 
         if not args.keep:
             entry.attributes.clear()
-            entry.attributes['ID'] = ''
+
+        # Skip features of other type
+        if feature_type:
+            if entry.type == feature_type:
+                feature_type_totals += 1
+            else:
+                unique_id = "f{!s}".format(passed_totals)
+                entry.attributes['ID'] = unique_id
+
+                out_h(entry.write())
+                continue
 
         try:
             attrs = hits["{}_{}".format(seq_id, feature_id)]['attr']
         except KeyError:
             if args.filter:
                 continue
-            else:
-                entry.attributes['product'] = "hypothetical protein"
         else:
             for attr in attrs:
-                entry.attributes[attr[0]] = attr[1]
+                entry.attributes[attr[0]] = attr[1]  #(name, value)
 
-        if 'product' not in entry.attributes:
-            entry.attributes['product'] = "hypothetical protein"
+            # Add default product info if not already available
+            if 'product' not in entry.attributes and default_product:
+                entry.attributes['product'] = default_product
 
         passed_totals += 1
 
         unique_id = "f{!s}".format(passed_totals)
         entry.attributes['ID'] = unique_id
 
-        args.out.write(entry.write())
+        out_h(entry.write())
 
     # Calculate and print statistics
-    print("Total alignments processed:\t{!s}".format(hits_totals), file=sys.stderr)
-    print("Total features processed:\t{!s}".format(gff_totals), file=sys.stderr)
-    print("  - features aligned to a single reference:\t{!s}".format(passed_totals), \
+    if no_map > 0:
+        print("warning: there were {!s} alignments that did not have a "
+              "corresponding mapping entry\n".format(no_map), file=sys.stderr)
+
+    for map_field in no_fields:
+        no_map_size = no_fields[map_field]
+        if no_map_size > 0:
+            print("warning: there were {!s} alignments that did not have an "
+                  "entry with field {} in a mapping file\n"\
+                  .format(no_map_size, field), file=sys.stderr)
+
+    print("Total alignments processed:\t{!s}".format(hits_totals), \
           file=sys.stderr)
+    print("Total features processed:\t{!s}".format(gff_totals), file=sys.stderr)
+    if feature_type:
+        print("  - features of relevant type:\t{!s}"\
+              .format(feature_type_totals), file=sys.stderr)
+    print("  - features aligned to a single reference:\t{!s}"\
+          .format(passed_totals), file=sys.stderr)
     print("  - features aligned to more than one reference:\t{!s}\n"\
           .format(conflict_totals), file=sys.stderr)
 
