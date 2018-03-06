@@ -35,6 +35,7 @@ from __future__ import print_function
 from arandomness.argparse import Open, ParseSeparator
 import argparse
 import csv
+import os
 from seq_annot.seqio import open_input
 import sys
 import textwrap
@@ -54,22 +55,47 @@ def main():
         metavar='in.csv [in.csv ...]',
         nargs='+',
         help="input one or more feature abundance files in CSV format")
+    parser.add_argument('-m', '--mapping',
+        metavar='in.json',
+        dest='map_file',
+        action=Open,
+        mode='rb',
+        help="input relational databases in JSON format containing "
+             "supplementary information about the features that should be "
+             "added to the table")
+    parser.add_argument('-f', '--fields',
+        metavar='FIELD [,FIELD,...]',
+        action=ParseSeparator,
+        sep=',',
+        help="comma-separated list of fields from the relational database "
+            "that should be added to the table")
     parser.add_argument('-o', '--out',
         action=Open,
         mode='wt',
         default=sys.stdout,
         help="output tabular feature by sample table [default: output to stdout]")
     parser.add_argument('-n', '--names',
-        metavar='SAMPLE [,SAMPLE,...]',
+        metavar='DATASET [,DATASET,...]',
         action=ParseSeparator,
         sep=',',
-        help="comma-separated list of sample names. The order should match "
-             "the order of the input files")
+        help="comma-separated list of dataset names to be used as the header "
+             "[default: will use file names as dataset names]. The order "
+             "should match the order of the input files")
+    parser.add_argument('-i', '--ids',
+        metavar='FEATURE [,FEATURE,...]',
+        dest='features',
+        action=ParseSeparator,
+        sep=',',
+        help="comma-separated list of feature IDs. Only those features "
+             "with a match in the list will be output [default: output all]")
     parser.add_argument('--version',
         action='version',
         version='%(prog)s ' + __version__)
     args = parser.parse_args()
 
+    if not (args.fields and args.map_file):
+        parser.error("error: -m/--mapping and -f/--fields must be supplied "
+                     "together")
 
     # Output run information
     all_args = sys.argv[1:]
@@ -78,17 +104,20 @@ def main():
           .format(' '.join(all_args)), 79), file=sys.stderr)
     print("", file=sys.stderr)
 
-
     # Track program run-time
     start_time = time()
-
 
     # Assign variables based on user input
     out_h = args.out.write
 
-    sample_names = args.names if args.names else ["Sample{}".format(i) for i \
-                   in list(range(len(args.csvs)))]
+    sample_names = args.names if args.names else [os.path.basename(i) for i \
+                   in args.csvs]
+    feature_names = args.features
 
+    if args.map_file:
+        mapping = json.load(args.map_file)
+
+    fields = args.fields
 
     # Store feature abundances in a dictionary
     totals = 0
@@ -105,21 +134,40 @@ def main():
                                       "verify that that the file is formatted "
                                       "correctly".format(csv_file))
 
+                if feature_names:
+                    # Ignore features not found in list of features to include
+                    if name not in feature_names:
+                        continue
+
                 if name not in abundances:
                     abundances[name] = [float(0) for i in sample_names]
 
                 abundances[name][position] = float(abundance)
 
-
     # Output header
-    out_h("Feature\t{}\n".format('\t'.join(sample_names)))
+    if args.mapping:
+        header_columns = sorted(fields) + sample_names
+    else:
+        header_columns = sample_names
 
+    header = "Feature\t{}\n".format('\t'.join(header_columns))
+    out_h(header)
 
     # Output feature abundances by sample
     for feature in sorted(abundances):
-        out_h("{}\t{}\n".format(feature, '\t'.join(['{0:.2f}'.format(i) for i \
-              in abundances[feature]])))
+        entries = []
+        if mapping:
+            for field in sorted(fields):
+                try:
+                    entry = mapping[feature][field]
+                except KeyError:
+                    entry = "NA"
+                except AttributeError:
+                    entry = "NA"
+                entries.append(entry)
 
+        entries = entries + ['{0:.2f}'.format(i) for i in abundances[feature]]
+        out_h("{}\t{}\n".format(feature, '\t'.join(entries)))
 
     # Output statistics
     feature_totals = len(abundances)
@@ -128,7 +176,6 @@ def main():
           file=sys.stderr)
     print("Total samples merged:\t{!s}\n".format(sample_totals),\
           file=sys.stderr)
-
 
     # Calculate and print program run-time info
     end_time = time()
