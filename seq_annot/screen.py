@@ -229,6 +229,9 @@ def main():
              "residue><position><mutant residue> (e.g. A254G). Argument must "
              "be used in conjunction with -m/--mapping. Screening for SNPs "
              "will be performed after alignment quality screening")
+    screen_method.add_argument('--best',
+        action='store_true',
+        help="discard all but the best hit")
     output_control = parser.add_argument_group(title="output control options")
     output_control.add_argument('--snp',
         dest='only_snp',
@@ -280,6 +283,7 @@ def main():
     mapping = json.load(args.map_file) if args.map_file else None
 
     specifiers = args.format
+    bh = args.best
     score_field = args.score_field
     snp_field = args.snp_field
     e_thresh = args.evalue
@@ -292,7 +296,17 @@ def main():
     passed_total = 0
     failed_qual = 0
     failed_snp = 0
+    failed_bh = 0
+    queries = []
     for totals, hit in enumerate(b6_iter(args.b6, header=specifiers)):
+
+        if bh:
+            query = hit.query
+            if query in queries:
+                failed_bh += 1
+                continue
+            else:
+                queries.append(query)
 
         subject = hit.subject
 
@@ -361,13 +375,16 @@ def main():
           file=sys.stderr)
     print("  - alignments that failed screening:\t{!s}".format(totals - \
           passed_total), file=sys.stderr)
-    if snp_field:
+    if e_thresh or len_thresh or id_thresh or score_field:
         print("    - by alignment quality:\t{!s}".format(failed_qual), \
               file=sys.stderr)
-        print("    - by secondary SNP screening:\t{!s}\n".format(failed_snp), \
+    if snp_field:
+        print("    - by secondary SNP screening:\t{!s}".format(failed_snp), \
               file=sys.stderr)
-    else:
-        print("")
+    if bh:
+        print("    - by best hit filtering:\t{!s}".format(failed_bh), \
+              file=sys.stderr)
+    print("")
  
     # Calculate and print program run-time
     end_time = time()
