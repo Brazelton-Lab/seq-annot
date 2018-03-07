@@ -597,8 +597,9 @@ def main():
     # Output statistics
     print("Total number of features:\t{!s}".format(feature_totals),\
           file=sys.stderr)
-    print("  - features of relevant type:\t{!s}".format(feature_type_totals), \
-          file=sys.stderr)
+    if feature_type:
+        print("  - features of relevant type:\t{!s}"\
+              .format(feature_type_totals), file=sys.stderr)
     print("Total number of mapped reads:\t{!s}".format(aln_totals),\
           file=sys.stderr)
     print("  - reads that successfully mapped to a feature:\t{!s}"\
