@@ -111,6 +111,11 @@ def main():
              "be determined by input file order. If 'quality', precedence "
              "will be given to the match with the highest quality alignment "
              "as determined by bitscore")
+    parser.add_argument('-t', '--type',
+        dest='ftype',
+        help="feature type (3rd column in GFF file) to annotate [default: "
+             "annotate features of all type]. All features of other type will "
+             "be ignored")
     parser.add_argument('-d', '--default',
         metavar='STR',
         dest='prod_def',
@@ -120,7 +125,7 @@ def main():
     output_control.add_argument('--filter',
         action='store_true',
         help="do not output unannotated features [default: no filtering]")
-    output_control.add_argument('--keep-attrs',
+    output_control.add_argument('--keep',
         dest='keep',
         action='store_true',
         help="do not overwrite existing attributes, but append new attributes "
@@ -150,7 +155,7 @@ def main():
     if args.map_files:
         mapping = {}
         for map_file in args.map_files:
-            json_map = json.load(map_file)
+            json_map = json.load(open_input(map_file))
             mapping = {**json_map, **mapping}
     else:
         mapping = None
@@ -158,8 +163,8 @@ def main():
     map_fields = args.fields
     match_precedence = args.precedence
     specifiers = args.format
+    default_product = args.prod_def
     feature_type = args.ftype
-    default_product = args.def_prod
 
     # Initiate statistics variables
     hits_totals = 0
@@ -167,7 +172,7 @@ def main():
     no_map = 0
     no_fields = {}
     for map_field in map_fields:
-        map_fields[map_field] = 0
+        no_fields[map_field] = 0
 
     # Parse results of the homology search
     hits = {}  #store matches and additional attributes
@@ -205,20 +210,21 @@ def main():
                         # Determine which match has the best alignment score
                         prev_score = hits[query]['bitscore']
 
-                        if prev_score >= hit.bitscore:
+                        if prev_score >= hit.bit_score:
                             continue  #existing match is best
                         else:
-                            hits[query] = {'bitscore': hit.bitscore, 'attr': \
-                                           [('Name', name)] + add_annots}
+                            hits[query] = {'bitscore': hit.bit_score, 'attr': \
+                                           [('Name', subject)] + add_annots}
 
                 else:
-                    hits[query] = {'bitscore': hit.bitscore, 'attr': [('Name', \
-                                   name)] + add_annots}
+                    hits[query] = {'bitscore': hit.bit_score, 'attr': [('Name', \
+                                   subject)] + add_annots}
 
     # Parse GFF file, adding annotations from homology search and relational db
     gff_totals = 0
-    passed_totals = 0
+    annotated_totals = 0
     feature_type_totals = 0
+    prev_name = None
     for entry in gff3_iter(args.gff, parse_attr=True, headers=True):
         try:
             seq_id = entry.seqid
@@ -231,38 +237,49 @@ def main():
 
         gff_totals += 1
 
+        # Keep track of output ID attribute components
+        if seq_id == prev_name:
+            seq_count += 1
+        else:
+            seq_count = 1
+            prev_name = seq_id
+
         feature_id = entry.attributes['ID'].split('_')[-1]  #id is second value
 
+        # Annotate features of a given type only
+        if feature_type:
+            if feature_type != entry.type:
+                if not args.filter:
+                    unique_id = "{}_{!s}".format(seq_id, seq_count)
+                    entry.attributes['ID'] = unique_id
+
+                    out_h(entry.write())
+
+                continue
+            else:
+                feature_type_totals += 1
+
+        # clear existing attributes unless otherwise directed
         if not args.keep:
             entry.attributes.clear()
 
-        # Skip features of other type
-        if feature_type:
-            if entry.type == feature_type:
-                feature_type_totals += 1
-            else:
-                unique_id = "f{!s}".format(passed_totals)
-                entry.attributes['ID'] = unique_id
-
-                out_h(entry.write())
-                continue
-
+        # Query name should be sequenceID_featureID
         try:
             attrs = hits["{}_{}".format(seq_id, feature_id)]['attr']
         except KeyError:
+            # Discard feature if unable to annotate
             if args.filter:
                 continue
         else:
+            annotated_totals += 1
             for attr in attrs:
                 entry.attributes[attr[0]] = attr[1]  #(name, value)
 
-            # Add default product info if not already available
-            if 'product' not in entry.attributes and default_product:
-                entry.attributes['product'] = default_product
+        # Add default product info if not already available
+        if 'product' not in entry.attributes and default_product:
+            entry.attributes['product'] = default_product
 
-        passed_totals += 1
-
-        unique_id = "f{!s}".format(passed_totals)
+        unique_id = "{}_{!s}".format(seq_id, seq_count)
         entry.attributes['ID'] = unique_id
 
         out_h(entry.write())
@@ -286,7 +303,7 @@ def main():
         print("  - features of relevant type:\t{!s}"\
               .format(feature_type_totals), file=sys.stderr)
     print("  - features aligned to a single reference:\t{!s}"\
-          .format(passed_totals), file=sys.stderr)
+          .format(annotated_totals), file=sys.stderr)
     print("  - features aligned to more than one reference:\t{!s}\n"\
           .format(conflict_totals), file=sys.stderr)
 
