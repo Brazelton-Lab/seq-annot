@@ -237,14 +237,14 @@ def main():
 
         gff_totals += 1
 
+        feature_id = entry.attributes['ID'].split('_')[-1]  #id is second value
+
         # Keep track of output ID attribute components
         if seq_id == prev_name:
             seq_count += 1
         else:
             seq_count = 1
             prev_name = seq_id
-
-        feature_id = entry.attributes['ID'].split('_')[-1]  #id is second value
 
         # Annotate features of a given type only
         if feature_type:
@@ -263,8 +263,13 @@ def main():
         if not args.keep:
             entry.attributes.clear()
 
-        # Query name should be sequenceID_featureID
+        # Provide new ID for the feature
+        unique_id = "{}_{!s}".format(seq_id, seq_count)
+        entry.attributes['ID'] = unique_id
+
+        # Annotate features using attributes field
         try:
+            # Query name should be sequenceID_featureID
             attrs = hits["{}_{}".format(seq_id, feature_id)]['attr']
         except KeyError:
             # Discard feature if unable to annotate
@@ -279,9 +284,7 @@ def main():
         if 'product' not in entry.attributes and default_product:
             entry.attributes['product'] = default_product
 
-        unique_id = "{}_{!s}".format(seq_id, seq_count)
-        entry.attributes['ID'] = unique_id
-
+        # Write features to new GFF3 file
         out_h(entry.write())
 
     # Calculate and print statistics
