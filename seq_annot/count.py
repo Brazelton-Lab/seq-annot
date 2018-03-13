@@ -37,12 +37,13 @@ Copyright:
 from __future__ import print_function
 from __future__ import division
 
-from arandomness.argparse import Open
+from arandomness.argparse import Open,ParseSeparator
 import argparse
 import HTSeq
 import itertools
 import json
 import os
+from seq_annot.seqio import open_input
 from statistics import mean
 import sys
 import textwrap
@@ -52,7 +53,7 @@ __author__ = 'Christopher Thornton'
 __license__ = 'GPLv3'
 __maintainer__ = 'Christopher Thornton'
 __status__ = "Beta"
-__version__ = '1.0.0'
+__version__ = '1.2.0'
 
 
 class UnknownChrom(Exception):
@@ -60,15 +61,17 @@ class UnknownChrom(Exception):
 
 
 def invert_strand(iv):
-   iv2 = iv.copy()
-   if iv2.strand == "+":
-      iv2.strand = "-"
-   elif iv2.strand == "-":
-      iv2.strand = "+"
-   else:
-      print("error: unknown strand value {}".format(iv2), file=sys.stderr)
-      sys.exit(1)
-   return iv2
+    """Return inverted strand
+    """
+    iv2 = iv.copy()
+    if iv2.strand == "+":
+        iv2.strand = "-"
+    elif iv2.strand == "-":
+        iv2.strand = "+"
+    else:
+        print("error: unknown strand value {}".format(iv2), file=sys.stderr)
+        sys.exit(1)
+    return iv2
 
 
 def compute_effective_length(length, fld=None, mu=600):
@@ -89,13 +92,13 @@ def compute_effective_length(length, fld=None, mu=600):
 
 
 def scale_abundance_none(counts, *args):
-    """Return unscaled coverage values.
+    """Return untransformed coverage values.
     """
     return counts
 
 
-def scale_abundance_fpk(counts, eff_len, *args):
-    """Scale coverage values by fragements per kilobase of feature.
+def scale_abundance_fpk(counts, length, *args):
+    """transform feature counts to fragements per kilobase of feature.
 
     formula:
         fpk_i = counts_i / ( effLen_i/1000 )
@@ -103,11 +106,11 @@ def scale_abundance_fpk(counts, eff_len, *args):
     counts - number of reads mapped to a feature (i.e. a gene sequence)
     effLen - effective length of a feature
     """
-    return counts / (eff_len / 1000)
+    return counts / (length / 1000)
 
 
-def scale_abundance_fpkm(counts, eff_len, nmapped, *args):
-    """Scale coverage values by fragements per kilobase of feature per 
+def scale_abundance_fpkm(counts, length, sfactor, *args):
+    """Transform feature counts to fragements per kilobase of feature per 
     million mapped fragements.
 
     formula:
@@ -119,11 +122,11 @@ def scale_abundance_fpkm(counts, eff_len, nmapped, *args):
 
     reference DOI: doi:10.1038/nmeth.1226
     """
-    return counts / ((eff_len / 1000) * (nmapped / 1000000))
+    return counts / ((length / 1000) * (sfactor / 1000000))
 
 
-def scale_abundance_tpm(counts, eff_len, total_rates, *args):
-    """Scale coverage values by transcripts per million.
+def scale_abundance_tpm(counts, length, sfactor, *args):
+    """Transform feature counts to transcripts per million.
 
     formula:
        tpm_i = countPerBase_i * ( 1/totalCountsPerBase ) * 1,000,000
@@ -135,13 +138,26 @@ def scale_abundance_tpm(counts, eff_len, total_rates, *args):
 
     reference DOI: doi:10.1007/s12064-012-0162-3
     """
-    return (counts / eff_len) * (1 / total_rates) * 1000000
+    return (counts / length) * (1 / sfactor) * 1000000
 
 
-def scale_abundance_biomass(counts, *args):
-    """Normalize coverage by biomass.
+def scale_abundance_biomass(counts, length, sfactor, *args):
+    """Normalize coverage by biomass and feature length.
+
+    formula:
+        biomass_i = countPerBase_i * ( numCells/totalCountsPerBase )
+
+    countsPerBase - number of counts per base ( counts/effLen )
+    counts - number of reads mapped to a feature (i.e. a gene sequence)
+    effLen - effective length of a feature
+    totalCountsPerBase - sum of all counts per base rates
+    numCells - estimated number of cells in the sample
     """
-    pass
+    return (counts / length) * sfactor
+
+
+def return_first_arg(first, *args):
+    return first
 
 
 def main():
@@ -149,16 +165,18 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('alignment_file',
         metavar='in.aln',
-        default=sys.stdin,
-        help="input alignment file in SAM or BAM format")
+        help="input alignment file in SAM or BAM format. Use '-' to indicate "
+             "that input should be taken from standard input (stdin)")
     parser.add_argument('feature_file',
         metavar='in.gff3',
-        help="input feature annotation file in GFF3 format")
-    parser.add_argument('-m', '--mapping', 
-        metavar='in.json', 
-        dest='map_file',
         action=Open,
         mode='rb',
+        help="input feature annotation file in GFF3 format")
+    parser.add_argument('-m', '--mapping', 
+        metavar='in.json',
+        dest='map_files',
+        action=ParseSeparator,
+        sep=',',
         help="input relational database in JSON format containing features "
              "mapped to feature categories, such as genes to gene families "
              "or exons to genes. Abundance estimates for feature categories "
@@ -170,19 +188,18 @@ def main():
         default=sys.stdout,
         help="output tabular file of feature abundances [default: output "
              "to stdout]")
-    parser.add_argument('-f', '--aln-format', 
+    parser.add_argument('-f', '--format', 
         metavar='FORMAT', 
         dest='aformat',
         choices=['bam', 'sam'], 
         default='bam',
         help="input alignment file format [default: bam]. Options are 'sam' "
              "or 'bam'")
-    parser.add_argument('-c', '--category-field',
+    parser.add_argument('-c', '--category',
         metavar='FIELD',
         dest='category',
-        default='gene_family',
         help="field in the relational database representing how features "
-             "are categorized [default: 'gene_family']")
+             "are categorized")
     parser.add_argument('-s', '--sorting', 
         metavar='ORDER',
         dest='order',
@@ -195,14 +212,15 @@ def main():
     parser.add_argument('-t', '--type', 
         metavar='TYPE', 
         dest='ftype',
+        default='CDS',
         help="feature type (3rd column in GFF file) to estimate abundance for "
-             "[default: count all]. All features of other type will be ignored")
-    parser.add_argument('-a', '--attr', 
+             "[default: CDS]. All features of other type will be ignored")
+    parser.add_argument('-a', '--attr',
         metavar='ATTRIBUTE',
         default="Name",
         help="GFF attribute to use as the ID for the calculated abundance "
-             "[default: 'Name']. This value will also be used as the search "
-             "ID of the relational database")
+             "[default: 'Name']. The value will also be used as the search "
+             "ID for the relational database")
     parser.add_argument('-e', '--mode', 
         metavar='MODE',
         choices=["union", "intersection-strict", "intersection-nonempty"],
@@ -230,21 +248,26 @@ def main():
              "between TPM and FPKM is that TMP is a proportional measurement, "
              "making it easier to identify the extent that the relative "
              "'importance' of a given feature changes between samples")
-    parser.add_argument('-k', '--concentration',
+    parser.add_argument('-g', '--nanograms',
+        metavar='TOTAL',
+        dest='total_dna',
         type=float,
-        help="sample DNA concentration. Required when the specified "
+        help="sample total DNA in nanograms. Required when the specified "
              "normalization method is 'biomass'")
     parser.add_argument('-d', '--dna',
+        metavar='AVG',
+        dest='avg_dna',
         type=float,
         default=0.000002,
-        help="average concentration of DNA per cell [default: 2E-6 (ng/cell)]")
-    parser.add_argument('-q', '--min-qual', 
-        metavar='QUAL',
+        help="average concentration of DNA per cell [default: 2E-6 (ng/cell)]. "
+             "Should be used in conjunction with --norm biomass")
+    parser.add_argument('-q', '--qual', 
+        metavar='THRESHOLD',
         dest='minqual',
         type=int, 
-        default=10,
-        help="skip all reads with alignment quality lower than the given "
-             "minimum value [default: 10]")
+        default=2,
+        help="skip all reads with alignment quality lower than the threshold "
+             "[default: 2]")
     parser.add_argument('-b', '--buffer', 
         metavar='BYTES',
         dest='buffer_size',
@@ -256,10 +279,11 @@ def main():
     parser.add_argument('--cdna',
         dest='transcripts',
         action='store_true',
-        help="sequences are of cDNA [default: False]. Whether sequences are of "
-             "gDNA or cDNA will affect how the effective length of a "
-             "feature is calculated")
-    parser.add_argument('--category-only',
+        help="sequences represent cDNA [default: False]. Whether sequences are "
+             "from gDNA or cDNA will determine how the length of a feature is "
+             "calculated for normalization. If cDNA, effective length will "
+             "serve as feature length")
+    parser.add_argument('--filter',
         dest='cat_only',
         action='store_true',
         help="only output abundances for features with an associated feature "
@@ -269,12 +293,12 @@ def main():
         version='%(prog)s ' + __version__)
     args = parser.parse_args()
 
-    if not (args.category and args.map_file):
-        parser.error("error: -m/--mapping and -c/--category-field must be "
-                     "supplied together")
+    if args.category and not args.map_files:
+        parser.error("error: -m/--mapping must also be supplied when "
+                     "-c/--category is used")
 
-    if args.norm == "biomass" and not args.concentration:
-        parser.error("error: -c/--concentration is required when "
+    if args.norm == "biomass" and not args.total_dna:
+        parser.error("error: -g/--nanograms is required when "
                      "normalizing by biomass")
 
     # Output run information
@@ -303,20 +327,19 @@ def main():
     else:  #must be BAM then
         align_reader = HTSeq.BAM_Reader
 
-    if args.map_file:
-        mapping = json.load(args.map_file)
+    if args.map_files:
+        mapping = {}
+        for map_file in args.map_files:
+            json_map = json.load(open_input(map_file))
+            mapping = {**json_map, **mapping}
+    else:
+        mapping = None
 
     # Iterate over GFF3 file, storing feature counts into a dictionary
     features = HTSeq.GenomicArrayOfSets("auto", False)
     counts = {}
 
-    if not args.map_file and args.norm != 'none':
-        print("warning: no relational database provided and normalization "
-              "method is not none. Using feature interval as feature length "
-              "for normalization instead. This may affect accuracy of the "
-              "abundance estimates".format('gene_length'), file=sys.stderr)
-
-    has_length = True
+    no_attr = 0
     feature_totals = 0
     feature_type_totals = 0
     try:
@@ -328,26 +351,18 @@ def main():
             try:
                 feature_id = f.attr[id_field]
             except KeyError:
-                print("error: attribute {} not found for feature '{}'"\
-                      .format(id_field, f.name), file=sys.stderr)
-                continue
+                no_attr += 1
+                feature_id = "unkwn_{:08}".format(no_attr)
 
             # Skip features of other type
-            if feature_type: 
+            if feature_type:
                 if f.type == feature_type:
                     feature_type_totals += 1
                 else:
                     continue
 
             # Store feature length for normalization
-            if not args.map_file:
-                feature_length = abs(f.iv.end - f.iv.start)
-            else:
-                try:
-                    feature_length = mapping[feature_id]['gene_length']
-                except KeyError:
-                    has_length = False
-                    feature_length = abs(f.iv.end - f.iv.start)
+            feature_length = abs(f.iv.end - f.iv.start)
 
             features[f.iv] += feature_id  #for mapping alignments
             counts[feature_id] = {'count': 0, 'length': feature_length}
@@ -357,29 +372,32 @@ def main():
               .format(gff.get_line_number_string()), file=sys.stderr)
         sys.exit(1)
 
-    if not has_length and args.norm != 'none':
-        print("warning: feature length field {} not found in the relational "
-              "database. Using feature interval as feature length for "
-              "normalization instead. This may affect accuracy of the "
-              "abundance estimates".format('gene_length'), file=sys.stderr)
-
-
     # Verify GFF3 file contains features of the specified type
     if feature_type_totals == 0:
         print("error: no features of type '{}' found.\n"
             .format(feature_type), file=sys.stderr)
         sys.exit(1)
 
+    if no_attr > 0:
+        print("warning: found {!s} features without a '{}' attribute.\n"\
+              .format(no_attr, id_field), file=sys.stderr)
 
     # Check alignment file formatting
     try:
-        read_seq = align_reader(args.alignment_file)
+        if args.alignment_file == '-':
+            read_seq_file = align_reader(sys.stdin)
+            read_seq_iter = iter(read_seq_file)
+            first_read = next(read_seq_iter)
+            read_seq = itertools.chain([first_read], read_seq_iter)
+        else:
+            read_seq_file = align_reader(args.alignment_file)
+            read_seq = read_seq_file
+            first_read = next(iter(read_seq))
     except:
         print("error: unable to read {}. Please verify that the formatting "
-              "is correct".format(args.alignment_file), file=sys.stderr)
+              "is correct.".format(args.alignment_file), file=sys.stderr)
         sys.exit(1)
     else:
-        first_read = next(iter(read_seq))
         pe_mode = first_read.paired_end  #reads are paired-end or single-end
 
     if pe_mode:
@@ -391,7 +409,7 @@ def main():
 
 
     # Iterate over alignment file
-    empty = 0  #reads that don't map to any feature
+    empty = 0  #reads aligned somewhere in the assembly, but not to a feature
     ambiguous = 0  #reads overlapping more than one feature
     notaligned = 0  #unaligned reads
     lowqual = 0  #reads not passing minimum threshold for alignment quality
@@ -399,7 +417,6 @@ def main():
     aln_totals = 0  #total reads
     mapped_totals = 0  #correctly mapped to a feature
     fld = []  #fragment length / insert-size distribution 
-
     for r in read_seq:
 
         aln_totals += 1
@@ -415,10 +432,10 @@ def main():
             try:
                 if r.optional_field("NH") > 1:
                     nonunique += 1
-                    print("warning: read {} has multiple alignments with "
-                          "a similar score. It is recommended that reads "
-                          "are filtered for best-hit prior to abundance "
-                          "estimation".format(r.iv.chrom), file=sys.stderr)
+                    print("warning: read '{}' has multiple alignments with "
+                          "similar score. It is recommended that best-hit "
+                          "filtering is performed prior to abundance "
+                          "estimation.\n".format(r.iv.chrom), file=sys.stderr)
                     continue
             except KeyError:
                 pass
@@ -427,9 +444,6 @@ def main():
             if r.aQual < minaqual:
                 lowqual += 1
                 continue
-
-            #append fragment length to fld
-            fld.append(len(r.read.seq))
 
             iv_seq = (invert_strand(co.ref_iv) for co in r.cigar if \
                       co.type == "M" and co.size > 0)
@@ -455,10 +469,10 @@ def main():
                 if (r[0] is not None and r[0].optional_field("NH") > 1 ) or \
                    (r[1] is not None and r[1].optional_field("NH") > 1):
                     nonunique += 1
-                    print("warning: read {} has multiple alignments with "
-                          "a similar score. It is recommended that reads "
-                          "are filtered for best-hit prior to abundance "
-                          "estimation".format(r[0].iv.chrom), \
+                    print("warning: read '{}' has multiple alignments with "
+                          "similar score. It is recommended that best-hit "
+                          "filtering is performed prior to abundance "
+                          "estimation.\n".format(r[0].iv.chrom), \
                           file=sys.stderr)
                     continue
             except KeyError:
@@ -507,92 +521,106 @@ def main():
                 #append fragment length/insert-size to fld
                 try:  #paired-end reads
                     fld.append(r[0].inferred_insert_size)
-                except AttributeError:  #single-end reads
+                except AttributeError:  #no mate
                     continue
                     #fld.append(len(r[0].read.seq))
 
         except UnknownChrom:
             empty += 1
 
-
     unmapped_totals = empty + ambiguous + lowqual + notaligned + nonunique
+    nmapped = mapped_totals + empty + ambiguous + nonunique + lowqual
 
+    # Set scaling function
     if args.norm == 'fpk':
         norm_method = scale_abundance_fpk
         scaling_factor = None
     elif args.norm == 'fpkm':
         norm_method = scale_abundance_fpkm
-        # scaling factor = all mapped reads
-        scaling_factor = mapped_totals + empty + ambiguous + nonunique
+        # Scaling factor is all mapped reads
+        scaling_factor = nmapped
     elif args.norm == 'tpm':
         norm_method = scale_abundance_tpm
-        scaling_factor = sum([counts[i]['count'] / counts[i]['length'] for i \
-                             in counts])
+        rates = [counts[i]['count'] / counts[i]['length'] for i in counts]
+        print(sum(rates), file=sys.stderr)
+        # Scaling factor is sum of all reads per base rates
+        scaling_factor = sum(rates)
     elif args.norm == 'biomass':
-        norm_method = scale_abundance_biomass  #not supported yet
-        scaling_factor = None
+        norm_method = scale_abundance_biomass
+        num_cells = args.total_dna / args.avg_dna
+        rates = [counts[i]['count'] / counts[i]['length'] for i in counts]
+        # Scaling factor is number cells over sum of reads per base rates
+        scaling_factor = num_cells / sum(rates)
     else:  #default is none
         norm_method = scale_abundance_none
         scaling_factor = None
 
-    # map to higher order features, if applicable
+    if are_transcripts and not pe_mode:
+        print("warning: unable to calculate effective length from single-end "
+              "reads. Will use sequence length instead.\n", file=sys.stderr)
+        calc_length = return_first_arg
+    elif are_transcripts and pe_mode:
+        calc_length = calculate_effective_length
+    else:
+        calc_length = return_first_arg
+
+    # Abundance normalization
     abundances = {}
-    if args.map_file:
+    unkwn_feat = 0
+    no_map = 0
+    for feature in counts:
 
-        for feature in counts:
+        fcount = counts[feature]['count']
+        efflen = calc_length(counts[feature]['length'], fld)
 
-            fcount = counts[feature]['count']
-            flen = counts[feature]['length']
+        feature_abundance = norm_method(fcount, efflen, scaling_factor)
 
-            if are_transcripts:
-                efflen = calculate_effective_length(flen, fld)
-            else:
-                efflen = flen
-
-            feature_abundance = norm_method(fcount, efflen, scaling_factor)
-
+        # Map to higher order features, if applicable
+        if category_field:
             try:
                 feature_map = mapping[feature]
             except KeyError:
-                print("warning: feature {} not found in relational database"\
-                      .format(feature), file=sys.stderr)
-
+                no_map += 1
                 if not category_only:
-                    abundances[feature] = feature_abundance
-
+                    # Keep all features, even the uncategorized ones
+                    abundances[feature] = abundances.get(feature, 0) + \
+                                          feature_abundance
                 continue
-
-            try:
-                category = feature_map[category_field]
-            except KeyError:
-                print("warning: unknown feature category {} specified"\
-                      .format(category_field), file=sys.stderr)
-
-                if not category_only:
-                    abundances[feature] = feature_abundance
-
-                continue
+            else:
+                try:
+                    category = feature_map[category_field]
+                except KeyError:
+                    unkwn_feat += 1
+                    if not category_only:
+                        abundances[feature] = abundances.get(feature, 0) + \
+                                              feature_abundance
+                    continue
 
             # Handle if feature has more than one category
             for category in category.split(','):
                 abundances[category.lstrip()] = abundances.get(category, 0) + \
                                                 feature_abundance
 
-    else:
-        for feature in counts:
-            abundances[feature] = norm_method(counts[feature]['count'], \
-                                  int(counts[feature]['length']), mapped_totals)
+        else:
+            abundances[feature] = abundances.get(feature, 0) + feature_abundance
 
+    if unkwn_feat > 0:
+        print("warning: found '{!s}' features without the '{}' field in the "
+              "relational database.\n".format(unkwn_feat, category_field), \
+              file=sys.stderr)
+
+    if no_map > 0:
+        print("warning: found {!s} features without an entry in the "
+              "relational database.\n".format(no_map), file=sys.stderr)
 
     # "UNMAPPED" can be interpreted as a single unknown gene of length one
     # kilobase recruiting all reads that failed to map to input features
     #abundances['UNMAPPED'] = unmapped_totals
 
-
     # Output abundances
-    for fn in abundances:
-        out_h("{}\t{!s}\n".format(fn, abundances[fn]))
-
+    for fn in sorted(abundances):
+        if not fn.startswith("unkwn_"):
+            out_h("{}\t{!s}\n".format(fn, abundances[fn]))
 
     # Output statistics
     print("Total number of features:\t{!s}".format(feature_totals),\
@@ -600,11 +628,13 @@ def main():
     if feature_type:
         print("  - features of relevant type:\t{!s}"\
               .format(feature_type_totals), file=sys.stderr)
-    print("Total number of mapped reads:\t{!s}".format(aln_totals),\
+    print("Total number of reads:\t{!s}".format(aln_totals),\
           file=sys.stderr)
-    print("  - reads that successfully mapped to a feature:\t{!s}"\
+    print("  - number of mapped reads:\t{!s}".format(nmapped),\
+          file=sys.stderr)
+    print("  - number of reads that successfully mapped to a feature:\t{!s}"\
           .format(mapped_totals), file=sys.stderr)
-    print("  - reads that failed to correctly map to any feature:\t{!s}"\
+    print("  - number of reads that failed to correctly map to any feature:\t{!s}"\
           .format(unmapped_totals), file=sys.stderr)
     print("    - no feature\t{!s}".format(empty), file=sys.stderr)
     print("    - ambiguous alignment\t{!s}".format(ambiguous), file=sys.stderr)
@@ -613,7 +643,6 @@ def main():
     print("    - not aligned\t{!s}".format(notaligned), file=sys.stderr)
     print("    - alignment not unique\t{!s}\n".format(nonunique), \
           file=sys.stderr)
-
 
     # Calculate and print program run-time
     end_time = time()
