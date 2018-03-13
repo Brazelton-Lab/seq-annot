@@ -169,8 +169,6 @@ def main():
              "that input should be taken from standard input (stdin)")
     parser.add_argument('feature_file',
         metavar='in.gff3',
-        action=Open,
-        mode='rb',
         help="input feature annotation file in GFF3 format")
     parser.add_argument('-m', '--mapping', 
         metavar='in.json',
@@ -366,7 +364,6 @@ def main():
 
             features[f.iv] += feature_id  #for mapping alignments
             counts[feature_id] = {'count': 0, 'length': feature_length}
-
     except:
         print("error: problem occured when processing GFF3 file at line ({})"
               .format(gff.get_line_number_string()), file=sys.stderr)
@@ -394,19 +391,17 @@ def main():
             read_seq = read_seq_file
             first_read = next(iter(read_seq))
     except:
-        print("error: unable to read {}. Please verify that the formatting "
-              "is correct.".format(args.alignment_file), file=sys.stderr)
+        print("error: unable to read the alignment file. Please verify that "
+              "the formatting is correct.", file=sys.stderr)
         sys.exit(1)
-    else:
-        pe_mode = first_read.paired_end  #reads are paired-end or single-end
 
+    pe_mode = first_read.paired_end  #reads are paired-end or single-end
     if pe_mode:
         if args.order == "name":
             read_seq = HTSeq.pair_SAM_alignments(read_seq)
         else:  #order is by position
             read_seq = HTSeq.pair_SAM_alignments_with_buffer(read_seq, \
                        max_buffer_size=args.buffer_size)
-
 
     # Iterate over alignment file
     empty = 0  #reads aligned somewhere in the assembly, but not to a feature
