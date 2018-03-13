@@ -125,11 +125,11 @@ def main():
     output_control.add_argument('--filter',
         action='store_true',
         help="do not output unannotated features [default: no filtering]")
-    output_control.add_argument('--keep',
-        dest='keep',
+    output_control.add_argument('--clear',
+        dest='clear_attrs',
         action='store_true',
-        help="do not overwrite existing attributes, but append new attributes "
-             "to the end of the list [default: overwrite existing]")
+        help="overwrite existing attributes [default: append new attributes "
+             "to the end of existing attributes]")
     parser.add_argument('--version',
         action='version',
         version='%(prog)s ' + __version__)
@@ -224,6 +224,7 @@ def main():
     gff_totals = 0
     annotated_totals = 0
     feature_type_totals = 0
+    unknown_totals = 0
     prev_name = None
     for entry in gff3_iter(args.gff, parse_attr=True, headers=True):
         try:
@@ -239,6 +240,10 @@ def main():
 
         feature_id = entry.attributes['ID'].split('_')[-1]  #id is second value
 
+        # clear existing attributes if directed
+        if args.clear_attrs:
+            entry.attributes.clear()
+
         # Keep track of output ID attribute components
         if seq_id == prev_name:
             seq_count += 1
@@ -246,26 +251,18 @@ def main():
             seq_count = 1
             prev_name = seq_id
 
+        # Provide new ID for the feature
+        unique_id = "{}_{!s}".format(seq_id, seq_count)
+        entry.attributes['ID'] = unique_id
+
         # Annotate features of a given type only
         if feature_type:
             if feature_type != entry.type:
                 if not args.filter:
-                    unique_id = "{}_{!s}".format(seq_id, seq_count)
-                    entry.attributes['ID'] = unique_id
-
                     out_h(entry.write())
-
                 continue
             else:
                 feature_type_totals += 1
-
-        # clear existing attributes unless otherwise directed
-        if not args.keep:
-            entry.attributes.clear()
-
-        # Provide new ID for the feature
-        unique_id = "{}_{!s}".format(seq_id, seq_count)
-        entry.attributes['ID'] = unique_id
 
         # Annotate features using attributes field
         try:
@@ -280,7 +277,7 @@ def main():
             for attr in attrs:
                 entry.attributes[attr[0]] = attr[1]  #(name, value)
 
-        # Add default product info if not already available
+        # Add default to product attribute if doesn't exist
         if 'product' not in entry.attributes and default_product:
             entry.attributes['product'] = default_product
 
