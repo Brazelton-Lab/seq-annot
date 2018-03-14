@@ -297,8 +297,10 @@ def main():
     failed_qual = 0
     failed_snp = 0
     failed_bh = 0
+    aln_totals = 0
     queries = []
-    for totals, hit in enumerate(b6_iter(args.b6, header=specifiers)):
+    for hit in b6_iter(args.b6, header=specifiers):
+        aln_totals += 1
 
         if bh:
             query = hit.query
@@ -368,12 +370,11 @@ def main():
             out_d(hit.write(defaults=default_only))
 
     # Output screening statistics
-    totals += 1
-    print("Total number of alignments:\t{!s}".format(totals), \
+    print("Total number of alignments:\t{!s}".format(aln_totals), \
           file=sys.stderr)
     print("  - alignments that passed screening:\t{!s}".format(passed_total), \
           file=sys.stderr)
-    print("  - alignments that failed screening:\t{!s}".format(totals - \
+    print("  - alignments that failed screening:\t{!s}".format(aln_totals - \
           passed_total), file=sys.stderr)
     if e_thresh or len_thresh or id_thresh or score_field:
         print("    - by alignment quality:\t{!s}".format(failed_qual), \
