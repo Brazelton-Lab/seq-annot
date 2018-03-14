@@ -53,7 +53,7 @@ __author__ = 'Christopher Thornton'
 __license__ = 'GPLv3'
 __maintainer__ = 'Christopher Thornton'
 __status__ = "Beta"
-__version__ = '1.2.0'
+__version__ = '1.3.0'
 
 
 class UnknownChrom(Exception):
