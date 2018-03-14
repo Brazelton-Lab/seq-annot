@@ -51,7 +51,7 @@ __author__ = "Christopher Thornton"
 __license__ = 'GPLv3'
 __maintainer__ = 'Christopher Thornton'
 __status__ = "Alpha"
-__version__ = "0.2.0"
+__version__ = "0.3.1"
 
 
 def screen_aln_quality(hit, evalue=10, identity=0, length=0, score=0):
@@ -391,7 +391,7 @@ def main():
     end_time = time()
     total_time = (end_time - start_time) / 60.0
     print("It took {:.2e} minutes to screen {!s} alignments\n"\
-          .format(total_time, totals), file=sys.stderr)
+          .format(total_time, aln_totals), file=sys.stderr)
 
 
 if __name__ == "__main__":
