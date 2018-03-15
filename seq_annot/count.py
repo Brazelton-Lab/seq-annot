@@ -226,27 +226,27 @@ def main():
         help="mode to handle reads that overlap more than one feature "
             "[default: union]. Options are 'union', 'intersection-strict', "
             "and 'intersection-nonempty'.")
-    parser.add_argument('-n', '--norm', 
-        metavar='METHOD',
-        choices=['none', 'fpk', 'fpkm', 'tpm', 'biomass'], 
-        default='none',
-        help="normalization method to use in abundance estimation [default: "
-             "none]. Choices are 'none', 'fpk' (fragments per kilobase of "
-             "feature), 'fpkm' (fragements per kilobase of feature per "
-             "million mapped fragments), 'tpm' (transcripts per million), and "
-             "'biomass'. For fpk, fpkm, and tpm, feature length will be taken "
-             "from the relational database if provided, otherwise it will be "
-             "calculated from feature start and end fields in the GFF3 file. "
-             "FPK is a normalization method to correct for differences in "
-             "feature lengths within a sample. It should only be used to "
-             "compare features within a single sample. FPKM and TPM are "
-             "normalization methods for correcting differences in both "
-             "feature lengths within a sample and for sequencing effort "
-             "(sample size) between samples. The functional difference "
-             "between TPM and FPKM is that TMP is a proportional measurement, "
-             "making it easier to identify the extent that the relative "
-             "'importance' of a given feature changes between samples")
-    parser.add_argument('-g', '--nanograms',
+    parser.add_argument('-u', '--units', 
+        metavar='UNITS',
+        dest='norm',
+        choices=['counts', 'fpk', 'fpkm', 'tpm', 'biomass'], 
+        default='counts',
+        help="output abundance estimates in these units [default: counts]. "
+             "Options are 'counts', 'fpk' (fragments per kilobase of feature), "
+             "'fpkm' (fragements per kilobase of feature per million mapped "
+             "fragments), 'tpm' (transcripts/fragments per million), and "
+             "'biomass' (cells). If other than 'counts', features will be "
+             "normalized by recruitment length, which will be calculated from "
+             "the start and end fields of the GFF3 file. This is the sole "
+             "normalization method used when transforming counts to FPK, and "
+             "is useful to correct for differences in feature lengths within "
+             "a sample. In addition to feature length, FPKM, TPM, and biomass "
+             "attempt to account for differences between samples in sample "
+             "size, although how sample size is defined differs between the "
+             "measures. Unlike FPKM, TMP and biomass are proportional "
+             "measurements, making it easier to identify the extent that the "
+             "relative 'importance' of a given feature changes between samples")
+    parser.add_argument('-n', '--nanograms',
         metavar='TOTAL',
         dest='total_dna',
         type=float,
@@ -291,12 +291,13 @@ def main():
         version='%(prog)s ' + __version__)
     args = parser.parse_args()
 
-    if args.category and not args.map_files:
-        parser.error("error: -m/--mapping must also be supplied when "
-                     "-c/--category is used")
+    if (args.category and not args.map_files) or \
+        (args.map_files and not args.category):
+        parser.error("error: -m/--mapping and -c/--category must be supplied "
+                     "together")
 
     if args.norm == "biomass" and not args.total_dna:
-        parser.error("error: -g/--nanograms is required when "
+        parser.error("error: -n/--nanograms is required when "
                      "normalizing by biomass")
 
     # Output run information
@@ -546,7 +547,7 @@ def main():
         rates = [counts[i]['count'] / counts[i]['length'] for i in counts]
         # Scaling factor is number cells over sum of reads per base rates
         scaling_factor = num_cells / sum(rates)
-    else:  #default is none
+    else:  #default is counts
         norm_method = scale_abundance_none
         scaling_factor = None
 
@@ -618,12 +619,12 @@ def main():
             out_h("{}\t{!s}\n".format(fn, abundances[fn]))
 
     # Output statistics
-    print("Total number of features:\t{!s}".format(feature_totals),\
+    print("Features processed:\t{!s}".format(feature_totals),\
           file=sys.stderr)
     if feature_type:
-        print("  - features of relevant type:\t{!s}"\
+        print("  - number of features with relevant type:\t{!s}"\
               .format(feature_type_totals), file=sys.stderr)
-    print("Total number of reads:\t{!s}".format(aln_totals),\
+    print("Reads processed:\t{!s}".format(aln_totals),\
           file=sys.stderr)
     print("  - number of mapped reads:\t{!s}".format(nmapped),\
           file=sys.stderr)
