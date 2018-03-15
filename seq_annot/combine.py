@@ -195,7 +195,7 @@ def main():
             out_h(entry.write())
 
     # Calculate and print statistics
-    print("Total features processed:\t{!s}".format(gff_totals), \
+    print("Features processed:\t{!s}".format(gff_totals), \
           file=sys.stderr)
     print("  - features remaining after merging:\t{!s}"\
           .format(passed_totals), file=sys.stderr)
