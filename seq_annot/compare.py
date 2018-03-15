@@ -35,6 +35,7 @@ from __future__ import print_function
 from arandomness.argparse import Open, ParseSeparator
 import argparse
 import csv
+import json
 import os
 from seq_annot.seqio import open_input
 import sys
@@ -45,7 +46,7 @@ __author__ = 'Christopher Thornton'
 __license__ = 'GPLv3'
 __maintainer__ = 'Christopher Thornton'
 __status__ = "Alpha"
-__version__ = '0.1.0'
+__version__ = '0.1.1'
 
 
 def main():
@@ -57,10 +58,10 @@ def main():
         help="input one or more feature abundance files in CSV format")
     parser.add_argument('-m', '--mapping',
         metavar='in.json',
-        dest='map_file',
-        action=Open,
-        mode='rb',
-        help="input relational databases in JSON format containing "
+        dest='map_files',
+        action=ParseSeparator,
+        sep=',',
+        help="input one or more relational databases in JSON format containing "
              "supplementary information about the features that should be "
              "added to the table")
     parser.add_argument('-f', '--fields',
@@ -93,7 +94,7 @@ def main():
         version='%(prog)s ' + __version__)
     args = parser.parse_args()
 
-    if not (args.fields and args.map_file):
+    if (args.fields and not args.map_files) or (args.map_files and not args.fields):
         parser.error("error: -m/--mapping and -f/--fields must be supplied "
                      "together")
 
@@ -114,8 +115,13 @@ def main():
                    in args.csvs]
     feature_names = args.features
 
-    if args.map_file:
-        mapping = json.load(args.map_file)
+    if args.map_files:
+        mapping = {}
+        for map_file in args.map_files:
+            json_map = json.load(open_input(map_file))
+            mapping = {**json_map, **mapping}
+    else:
+        mapping = None
 
     fields = args.fields
 
@@ -145,7 +151,7 @@ def main():
                 abundances[name][position] = float(abundance)
 
     # Output header
-    if args.mapping:
+    if mapping:
         header_columns = sorted(fields) + sample_names
     else:
         header_columns = sample_names
@@ -172,9 +178,9 @@ def main():
     # Output statistics
     feature_totals = len(abundances)
     sample_totals = len(sample_names)
-    print("Total number of features:\t{!s}".format(feature_totals),\
+    print("Number of features compared:\t{!s}".format(feature_totals),\
           file=sys.stderr)
-    print("Total samples merged:\t{!s}\n".format(sample_totals),\
+    print("Number of samples merged:\t{!s}\n".format(sample_totals),\
           file=sys.stderr)
 
     # Calculate and print program run-time info
