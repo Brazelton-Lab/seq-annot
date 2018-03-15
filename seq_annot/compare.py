@@ -171,6 +171,8 @@ def main():
                     entry = "NA"
                 except AttributeError:
                     entry = "NA"
+                if not entry:
+                    entry = "NA"
                 entries.append(entry)
 
         entries = entries + ['{0:.2f}'.format(i) for i in abundances[feature]]
