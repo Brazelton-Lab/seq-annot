@@ -94,7 +94,8 @@ def main():
         version='%(prog)s ' + __version__)
     args = parser.parse_args()
 
-    if (args.fields and not args.map_files) or (args.map_files and not args.fields):
+    if (args.fields and not args.map_files) or \
+        (args.map_files and not args.fields):
         parser.error("error: -m/--mapping and -f/--fields must be supplied "
                      "together")
 
@@ -178,9 +179,9 @@ def main():
     # Output statistics
     feature_totals = len(abundances)
     sample_totals = len(sample_names)
-    print("Number of features compared:\t{!s}".format(feature_totals),\
+    print("Features compared:\t{!s}".format(feature_totals),\
           file=sys.stderr)
-    print("Number of samples merged:\t{!s}\n".format(sample_totals),\
+    print("Samples merged:\t{!s}\n".format(sample_totals),\
           file=sys.stderr)
 
     # Calculate and print program run-time info

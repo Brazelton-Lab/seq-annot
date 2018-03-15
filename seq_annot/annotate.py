@@ -135,7 +135,8 @@ def main():
         version='%(prog)s ' + __version__)
     args = parser.parse_args()
 
-    if not (args.fields and args.map_files):
+    if (args.fields and not args.map_files) or \
+        (args.map_files and not args.fields):
         parser.error("error: -m/--mapping and -f/--fields must be supplied "
                      "together")
 
@@ -293,12 +294,12 @@ def main():
         no_map_size = no_fields[map_field]
         if no_map_size > 0:
             print("warning: there were {!s} alignments that did not have an "
-                  "entry with field {} in a mapping file\n"\
+                  "entry with field '{}' in a mapping file\n"\
                   .format(no_map_size, field), file=sys.stderr)
 
-    print("Total alignments processed:\t{!s}".format(hits_totals), \
+    print("Alignments processed:\t{!s}".format(hits_totals), \
           file=sys.stderr)
-    print("Total features processed:\t{!s}".format(gff_totals), file=sys.stderr)
+    print("Features processed:\t{!s}".format(gff_totals), file=sys.stderr)
     if feature_type:
         print("  - features of relevant type:\t{!s}"\
               .format(feature_type_totals), file=sys.stderr)

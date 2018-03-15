@@ -370,7 +370,7 @@ def main():
             out_d(hit.write(defaults=default_only))
 
     # Output screening statistics
-    print("Total number of alignments:\t{!s}".format(aln_totals), \
+    print("Alignments processed:\t{!s}".format(aln_totals), \
           file=sys.stderr)
     print("  - alignments that passed screening:\t{!s}".format(passed_total), \
           file=sys.stderr)
