@@ -1,7 +1,0 @@
-[console_scripts]
-annotate_features = seq_annot.annotate:main
-combine_features = seq_annot.combine:main
-compare_features = seq_annot.compare:main
-count_features = seq_annot.count:main
-screen_features = seq_annot.screen:main
-
