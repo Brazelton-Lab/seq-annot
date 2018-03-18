@@ -173,6 +173,10 @@ def main():
                     entry = "NA"
                 if not entry:
                     entry = "NA"
+
+                if type(entry) == type(list()):
+                    entry = ';'.join(entry)
+
                 entries.append(entry)
 
         entries = entries + ['{0:.2f}'.format(i) for i in abundances[feature]]
