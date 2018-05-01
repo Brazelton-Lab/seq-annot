@@ -2,18 +2,18 @@
 """
 Calculate genomic feature abundances.
 
-Usage:
-    count_features [options] [-o out.csv] [-m in.json] in.aln in.gff3
-
 Required inputs are a GFF3 file of annotated features and an alignments file 
 in SAM or BAM format. Optional input is a relational database containing 
-features mapped to feature categories, such as genes to gene families. Output 
-is a tabular file of feature abundances.
+features mapped to feature categories, such as genes to gene families. 
+Abundances will be calculated for feature categories in place of features if 
+the appropriate arguments are supplied. Output is a tabular file of estimated 
+feature abundances.
 
 The compression algorithm is automatically detected for input files based on 
 the file extension. To compress output, add the appropriate file extension 
-to the output file name (e.g. .gz, .bz2). Leave off '--out' to direct output 
-to standard output (stdout).
+to the output file name (e.g. .gz, .bz2). The alignments file will be taken 
+from standard input (stdin) if '-' is supplied in place of a file name.
+Similarly, leaving off '--out' will direct output to standard output (stdout).
 
 Copyright:
 
@@ -53,7 +53,7 @@ __author__ = 'Christopher Thornton'
 __license__ = 'GPLv3'
 __maintainer__ = 'Christopher Thornton'
 __status__ = "Beta"
-__version__ = '1.3.0'
+__version__ = '1.4.1'
 
 
 class UnknownChrom(Exception):
@@ -141,17 +141,16 @@ def scale_abundance_tpm(counts, length, sfactor, *args):
     return (counts / length) * (1 / sfactor) * 1000000
 
 
-def scale_abundance_biomass(counts, length, sfactor, *args):
-    """Normalize coverage by biomass and feature length.
+def scale_abundance_prop(counts, length, sfactor, *args):
+    """Transform feature counts using custom method.
 
     formula:
-        biomass_i = countPerBase_i * ( numCells/totalCountsPerBase )
+        prop_i = countPerBase_i / totalCountsPerBase * scaleFactor
 
     countsPerBase - number of counts per base ( counts/effLen )
     counts - number of reads mapped to a feature (i.e. a gene sequence)
     effLen - effective length of a feature
     totalCountsPerBase - sum of all counts per base rates
-    numCells - estimated number of cells in the sample
     """
     return (counts / length) * sfactor
 
@@ -229,38 +228,35 @@ def main():
     parser.add_argument('-u', '--units', 
         metavar='UNITS',
         dest='norm',
-        choices=['counts', 'fpk', 'fpkm', 'tpm', 'biomass'], 
+        choices=['counts', 'fpk', 'fpkm', 'tpm', 'custom'], 
         default='counts',
         help="output abundance estimates in these units [default: counts]. "
              "Options are 'counts', 'fpk' (fragments per kilobase of feature), "
              "'fpkm' (fragements per kilobase of feature per million mapped "
              "fragments), 'tpm' (transcripts/fragments per million), and "
-             "'biomass' (cells). If other than 'counts', features will be "
+             "'custom'. If other than 'counts', features will be "
              "normalized by recruitment length, which will be calculated from "
              "the start and end fields of the GFF3 file. This is the sole "
              "normalization method used when transforming counts to FPK, and "
              "is useful to correct for differences in feature lengths within "
-             "a sample. In addition to feature length, FPKM, TPM, and biomass "
-             "attempt to account for differences between samples in sample "
-             "size, although how sample size is defined differs between the "
-             "measures. Unlike FPKM, TMP and biomass are proportional "
-             "measurements, making it easier to identify the extent that the "
-             "relative 'importance' of a given feature changes between samples")
-    parser.add_argument('-n', '--nanograms',
-        metavar='TOTAL',
-        dest='total_dna',
+             "a sample. In addition to feature length, FPKM and TPM attempt "
+             "to account for differences between samples in sequencing "
+             "effort. An advantage of TMP over FPKM is that TPM is a "
+             "proportional measurement, making it easier to identify the "
+             "extent that the relative 'importance' of a given feature "
+             "changes between samples. A custom transformation can also be "
+             "performed when used with the -k/--coeff argument, in which "
+             "case the length normalized proportion of a feature will be "
+             "multiplied by the provided scaling factor.")
+    parser.add_argument('-k', '--coeff',
+        metavar='MUL',
+        dest='sfactor',
         type=float,
-        help="sample total DNA in nanograms. Required when the specified "
-             "normalization method is 'biomass'")
-    parser.add_argument('-d', '--dna',
-        metavar='AVG',
-        dest='avg_dna',
-        type=float,
-        default=0.000002,
-        help="average concentration of DNA per cell [default: 2E-6 (ng/cell)]. "
-             "Should be used in conjunction with --norm biomass")
+        default=1,
+        help="multiplier to use when 'custom' is given to -u/--units "
+             "[default: 1]")
     parser.add_argument('-q', '--qual', 
-        metavar='THRESHOLD',
+        metavar='THRESH',
         dest='minqual',
         type=int, 
         default=2,
@@ -295,10 +291,6 @@ def main():
         (args.map_files and not args.category):
         parser.error("error: -m/--mapping and -c/--category must be supplied "
                      "together")
-
-    if args.norm == "biomass" and not args.total_dna:
-        parser.error("error: -n/--nanograms is required when "
-                     "normalizing by biomass")
 
     # Output run information
     all_args = sys.argv[1:]
@@ -406,6 +398,7 @@ def main():
 
     # Iterate over alignment file
     empty = 0  #reads aligned somewhere in the assembly, but not to a feature
+    duplicate = 0  #reads are duplicates of other reads
     ambiguous = 0  #reads overlapping more than one feature
     notaligned = 0  #unaligned reads
     lowqual = 0  #reads not passing minimum threshold for alignment quality
@@ -439,6 +432,11 @@ def main():
             # Did the alignment pass the minimum quality threshold?
             if r.aQual < minaqual:
                 lowqual += 1
+                continue
+
+            # Was the read marked as a duplciate?
+            if r.pcr_or_optical_duplicate:
+                duplicate += 1
                 continue
 
             iv_seq = (invert_strand(co.ref_iv) for co in r.cigar if \
@@ -478,6 +476,12 @@ def main():
             if (r[0] and r[0].aQual < minaqual) or (r[1] and r[1].aQual < \
                 minaqual):
                 lowqual += 1
+                continue
+
+            # Was the read pair marked as a duplicate?
+            if (r[0] and r[0].pcr_or_optical_duplicate) or (r[1] and \
+                r[1].pcr_or_optical_duplicate):
+                duplicate += 1
                 continue
 
         # Handle case where reads might overlap more than one feature
@@ -524,7 +528,8 @@ def main():
         except UnknownChrom:
             empty += 1
 
-    unmapped_totals = empty + ambiguous + lowqual + notaligned + nonunique
+    unmapped_totals = empty + ambiguous + lowqual + notaligned + nonunique + \
+                      duplicate
     nmapped = mapped_totals + empty + ambiguous + nonunique + lowqual
 
     # Set scaling function
@@ -537,16 +542,14 @@ def main():
         scaling_factor = nmapped
     elif args.norm == 'tpm':
         norm_method = scale_abundance_tpm
-        rates = [counts[i]['count'] / counts[i]['length'] for i in counts]
+        rates = [counts[j]['count'] / counts[j]['length'] for j in counts]
         print(sum(rates), file=sys.stderr)
         # Scaling factor is sum of all reads per base rates
         scaling_factor = sum(rates)
-    elif args.norm == 'biomass':
-        norm_method = scale_abundance_biomass
-        num_cells = args.total_dna / args.avg_dna
-        rates = [counts[i]['count'] / counts[i]['length'] for i in counts]
-        # Scaling factor is number cells over sum of reads per base rates
-        scaling_factor = num_cells / sum(rates)
+    elif args.norm == 'custom':
+        norm_method = scale_abundance_prop
+        rates = [counts[j]['count'] / counts[j]['length'] for j in counts]
+        scaling_factor = args.sfactor / sum(rates)
     else:  #default is counts
         norm_method = scale_abundance_none
         scaling_factor = None
@@ -567,9 +570,9 @@ def main():
     for feature in counts:
 
         fcount = counts[feature]['count']
-        efflen = calc_length(counts[feature]['length'], fld)
+        flen = calc_length(counts[feature]['length'], fld)
 
-        feature_abundance = norm_method(fcount, efflen, scaling_factor)
+        feature_abundance = norm_method(fcount, flen, scaling_factor)
 
         # Map to higher order features, if applicable
         if category_field:
@@ -637,6 +640,7 @@ def main():
     print("    - too low alignment quality\t{!s}".format(lowqual), \
           file=sys.stderr)
     print("    - not aligned\t{!s}".format(notaligned), file=sys.stderr)
+    print("    - duplicate\t{!s}".format(duplicate), file=sys.stderr)
     print("    - alignment not unique\t{!s}\n".format(nonunique), \
           file=sys.stderr)
 
