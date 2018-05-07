@@ -67,8 +67,10 @@ def main():
         action=Open,
         mode='rb',
         default=sys.stdin,
-        help="input feature predictions in GFF3 format")
+        help="input feature predictions in GFF3 format [default: input from "
+             "stdin]")
     parser.add_argument('-b', '--b6',
+        metavar='in.b6 [,in.b6,...]',
         action=ParseSeparator,
         sep=',',
         help="input one or more best-hit alignment files in B6/M8 format. The "
@@ -77,7 +79,7 @@ def main():
              "a match in more than one alignment file, precedence will be "
              "determined by input order")
     parser.add_argument('-m', '--mapping',
-        metavar='in.json',
+        metavar='in.json [,in.json,...]',
         dest='map_files',
         action=ParseSeparator,
         sep=',',
@@ -109,7 +111,7 @@ def main():
         help="method to resolve conflicting annotations [default: quality]. "
              "Options are 'order' and 'quality'. If 'order', precedence will "
              "be determined by input file order. If 'quality', precedence "
-             "will be given to the match with the highest quality alignment "
+             "will be given to the match with the highest quality alignment, "
              "as determined by bitscore")
     parser.add_argument('-t', '--type',
         dest='ftype',
@@ -120,8 +122,13 @@ def main():
         metavar='STR',
         dest='prod_def',
         help="default product for features without associated product "
-             "information")
+             "information in relational database")
     output_control = parser.add_argument_group(title="output control options")
+    output_control.add_argument('-l', '--log',
+        metavar='out.log',
+        action=Open,
+        mode='wt',
+        help="output information on discarded annotations")
     output_control.add_argument('--filter',
         action='store_true',
         help="do not output unannotated features [default: no filtering]")
@@ -152,6 +159,8 @@ def main():
 
     # Assign variables based on user inputs
     out_h = args.out.write
+    out_log = args.log.write if args.log else do_nothing
+    out_log("#Kept\tDiscarded\tReason")
 
     if args.map_files:
         mapping = {}
@@ -184,21 +193,6 @@ def main():
 
                 hits_totals += 1
 
-                subject = hit.subject
-
-                add_annots = []
-                if mapping:
-                    try:
-                        sub_entry = mapping[subject]
-                    except KeyError:
-                        no_map += 1
-                    else:
-                        for field in map_fields:
-                            try:
-                                add_annots.append((field, sub_entry[field]))
-                            except KeyError:
-                                no_fields[field] += 1
-
                 query = hit.query
 
                 if query in hits:
@@ -206,20 +200,21 @@ def main():
 
                     if match_precedence == 'order':
                         # Preserve only best hit on first come basis
+                        out_log("{}\t{}\t{}".format(hits[query].subject, hit.subject, 'order'))
                         continue
                     else:
                         # Determine which match has the best alignment score
-                        prev_score = hits[query]['bitscore']
+                        prev_score = hits[query].bit_score
 
                         if prev_score >= hit.bit_score:
+                            out_log("{}\t{}\t{}".format(hits[query].subject, hit.subject, 'score'))
                             continue  #existing match is best
                         else:
-                            hits[query] = {'bitscore': hit.bit_score, 'attr': \
-                                           [('Name', subject)] + add_annots}
+                            out_log("{}\t{}\t{}".format(hit.subject, hits[query].subject, 'score'))
+                            hits[query] = hit
 
                 else:
-                    hits[query] = {'bitscore': hit.bit_score, 'attr': [('Name', \
-                                   subject)] + add_annots}
+                    hits[query] = hit
 
     # Parse GFF file, adding annotations from homology search and relational db
     gff_totals = 0
@@ -268,12 +263,30 @@ def main():
         # Annotate features using attributes field
         try:
             # Query name should be sequenceID_featureID
-            attrs = hits["{}_{}".format(seq_id, feature_id)]['attr']
+            hit = hits["{}_{}".format(seq_id, feature_id)]
         except KeyError:
             # Discard feature if unable to annotate
             if args.filter:
                 continue
         else:
+            subject = hit.subject
+
+            attrs = [('Name', subject)]
+            if mapping:
+                try:
+                    sub_entry = mapping[subject]
+                except KeyError:
+                    no_map += 1
+                else:
+                    for field in map_fields:
+                        try:
+                            entry_value = sub_entry[field]
+                        except KeyError:
+                            no_fields[field] += 1
+                        else:
+                            if entry_value:
+                                attrs.append((field, entry_value))
+
             annotated_totals += 1
             for attr in attrs:
                 entry.attributes[attr[0]] = attr[1]  #(name, value)
@@ -301,11 +314,11 @@ def main():
           file=sys.stderr)
     print("Features processed:\t{!s}".format(gff_totals), file=sys.stderr)
     if feature_type:
-        print("  - features of relevant type:\t{!s}"\
+        print("  - of relevant type:\t{!s}"\
               .format(feature_type_totals), file=sys.stderr)
-    print("  - features aligned to a single reference:\t{!s}"\
+    print("  - single aligned reference:\t{!s}"\
           .format(annotated_totals), file=sys.stderr)
-    print("  - features aligned to more than one reference:\t{!s}\n"\
+    print("  - multiple aligned references:\t{!s}\n"\
           .format(conflict_totals), file=sys.stderr)
 
     # Calculate and print program run-time
