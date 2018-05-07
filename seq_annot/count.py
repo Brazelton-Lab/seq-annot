@@ -53,7 +53,7 @@ __author__ = 'Christopher Thornton'
 __license__ = 'GPLv3'
 __maintainer__ = 'Christopher Thornton'
 __status__ = "Beta"
-__version__ = '1.4.1'
+__version__ = '1.4.8'
 
 
 class UnknownChrom(Exception):
@@ -202,10 +202,10 @@ def main():
         dest='order',
         choices=["position", "name"], 
         default='position',
-        help="alignment file sorting scheme [default: position]. The input "
-             "alignments file must be pre-sorted either by position or by "
-             "read name. This will be ignored for single-end reads. Options "
-             "are 'position' or 'name'" )
+        help="alignment file sorting scheme. Options are 'position' and "
+             "'name' [default: position]. Alignments must be pre-sorted "
+             "either by position/coordinates or by read name. This option "
+             "will be ignored for single-end reads")
     parser.add_argument('-t', '--type', 
         metavar='TYPE', 
         dest='ftype',
@@ -217,14 +217,18 @@ def main():
         default="Name",
         help="GFF attribute to use as the ID for the calculated abundance "
              "[default: 'Name']. The value will also be used as the search "
-             "ID for the relational database")
+             "ID for the relational database, if provided")
     parser.add_argument('-e', '--mode', 
         metavar='MODE',
         choices=["union", "intersection-strict", "intersection-nonempty"],
         default="union",
-        help="mode to handle reads that overlap more than one feature "
-            "[default: union]. Options are 'union', 'intersection-strict', "
-            "and 'intersection-nonempty'.")
+        help="mode for handling different alignment scenarios. Options are "
+             "'union', 'intersection-strict', and 'intersection-nonempty' "
+             "[default: union]. The modes will count alignments differently "
+             "depending on whether a read/pair overlaps more than one feature "
+             "or only partially aligns to a single feature. The most "
+             "inclusive mode is 'union' when given with the nonunique flag, "
+             "and the least inclusive is 'intersection-strict'")
     parser.add_argument('-u', '--units', 
         metavar='UNITS',
         dest='norm',
@@ -282,6 +286,9 @@ def main():
         action='store_true',
         help="only output abundances for features with an associated feature "
              "category [default: output all]")
+    parser.add_argument('--nonunique',
+        action='store_true',
+        help="allow reads to align with more than one feature")
     parser.add_argument('--version',
         action='version',
         version='%(prog)s ' + __version__)
@@ -312,6 +319,9 @@ def main():
     category_field = args.category
     are_transcripts = args.transcripts
     category_only = args.cat_only
+    multi_aln = args.nonunique
+
+    match_types = ('M', '=', 'X')
 
     if args.aformat == "sam":
         align_reader = HTSeq.SAM_Reader
@@ -326,8 +336,8 @@ def main():
     else:
         mapping = None
 
-    # Iterate over GFF3 file, storing feature counts into a dictionary
-    features = HTSeq.GenomicArrayOfSets("auto", False)
+    # Iterate over GFF3 file, storing features to estimate coverage for
+    features = HTSeq.GenomicArrayOfSets("auto", stranded=False)
     counts = {}
 
     no_attr = 0
@@ -345,7 +355,7 @@ def main():
                 no_attr += 1
                 feature_id = "unkwn_{:08}".format(no_attr)
 
-            # Skip features of other type
+            # Skip features of wrong type
             if feature_type:
                 if f.type == feature_type:
                     feature_type_totals += 1
@@ -412,82 +422,88 @@ def main():
 
         if not pe_mode:  #single-end read mapping
 
-            # Did the read align at all?
+            # Check if read aligned
             if not r.aligned:
                 notaligned += 1
                 continue
 
-            # Did the read align uniquely?
+            # Check if the read aligned uniquely
             try:
                 if r.optional_field("NH") > 1:
                     nonunique += 1
                     print("warning: read '{}' has multiple alignments with "
-                          "similar score. It is recommended that best-hit "
-                          "filtering is performed prior to abundance "
-                          "estimation.\n".format(r.iv.chrom), file=sys.stderr)
-                    continue
-            except KeyError:
-                pass
-
-            # Did the alignment pass the minimum quality threshold?
-            if r.aQual < minaqual:
-                lowqual += 1
-                continue
-
-            # Was the read marked as a duplciate?
-            if r.pcr_or_optical_duplicate:
-                duplicate += 1
-                continue
-
-            iv_seq = (invert_strand(co.ref_iv) for co in r.cigar if \
-                      co.type == "M" and co.size > 0)
-
-        else:  #paired-end read mapping
-            # Did both reads properly align?
-            if r[0] is not None and r[0].aligned:
-                iv_seq = (invert_strand(co.ref_iv) for co in r[0].cigar if \
-                          co.type == "M" and co.size > 0)
-            else:
-                iv_seq = tuple()
-
-            if r[1] is not None and r[1].aligned:
-                iv_seq = itertools.chain(iv_seq, (co.ref_iv for co in \
-                         r[1].cigar if co.type == "M" and co.size > 0))
-            else:
-                if (r[0] is None) or not (r[0].aligned):
-                    notaligned += 1
-                    continue
-
-            # Did either one of the reads align more than once?
-            try:
-                if (r[0] is not None and r[0].optional_field("NH") > 1 ) or \
-                   (r[1] is not None and r[1].optional_field("NH") > 1):
-                    nonunique += 1
-                    print("warning: read '{}' has multiple alignments with "
-                          "similar score. It is recommended that best-hit "
-                          "filtering is performed prior to abundance "
-                          "estimation.\n".format(r[0].iv.chrom), \
+                          "similar score.\n".format(r.iv.chrom), \
                           file=sys.stderr)
                     continue
             except KeyError:
                 pass
 
-            # Did either one of the read pair align poorly?
-            if (r[0] and r[0].aQual < minaqual) or (r[1] and r[1].aQual < \
-                minaqual):
+            # Cehck if the alignment passed the quality requirement
+            if r.aQual < minaqual:
                 lowqual += 1
                 continue
 
-            # Was the read pair marked as a duplicate?
-            if (r[0] and r[0].pcr_or_optical_duplicate) or (r[1] and \
-                r[1].pcr_or_optical_duplicate):
+            # Check whether the read was marked as a duplciate
+            if r.pcr_or_optical_duplicate:
                 duplicate += 1
                 continue
+
+            # Store read coordiantes
+            iv_seq = (co.ref_iv for co in r.cigar if co.type in match_types \
+                      and co.size > 0)
+
+        else:  #paired-end read mapping
+
+            # Store pair coordinates
+            try:
+                first_r, second_r = r
+            except ValueError:
+                notaligned += 1
+                continue
+
+            if first_r.aligned and second_r.aligned:
+                iv_seq = tuple()
+                for aln_pair in r:
+                    iv_seq = itertools.chain(iv_seq, (co.ref_iv for co in \
+                             aln_pair.cigar if co.type in match_types and \
+                             co.size > 0))
+            else:
+                notaligned += 1
+                continue
+
+            # Check whether either read aligned more than once
+            try:
+                if (first_r.optional_field("NH") > 1) or \
+                   (second_r.optional_field("NH") > 1):
+                    nonunique += 1
+                    print("warning: read '{}' has multiple alignments with "
+                          "similar score.\n".format(first_r.iv.chrom), \
+                          file=sys.stderr)
+                    continue
+            except KeyError:
+                pass
+
+            # Check if both reads passed the quality requirement
+            if first_r.aQual < minaqual or second_r.aQual < minaqual:
+                lowqual += 1
+                continue
+
+            # Check if the read pair was marked as a duplicate
+            if first_r.pcr_or_optical_duplicate or \
+                second_r.pcr_or_optical_duplicate:
+                duplicate += 1
+                continue
+
+            # Append fragment length/insert-size to distribution
+            try:
+                fld.append(first_r.inferred_insert_size)
+            except AttributeError:
+                pass
 
         # Handle case where reads might overlap more than one feature
         try:
             if overlap_mode == "union":
-                fs = set()
+                fs = set()  #store feature names when reads align
                 for iv in iv_seq:
                      if iv.chrom not in features.chrom_vectors:
                          raise UnknownChrom
@@ -495,8 +511,7 @@ def main():
                      for iv2, fs2 in features[iv].steps():
                          fs = fs.union(fs2)
 
-            elif overlap_mode == "intersection-strict" or \
-                overlap_mode == "intersection-nonempty":
+            else:  #intersection
                 fs = None
                 for iv in iv_seq:
                     if iv.chrom not in features.chrom_vectors:
@@ -512,18 +527,16 @@ def main():
             # If a read correctly mapped to a feature, increment its abundance
             if not fs:
                 empty += 1
+                continue
             elif len(fs) > 1:
                 ambiguous += 1
+                if not multi_aln:
+                    continue
             else:
-                counts[list(fs)[0]]['count'] += 1
                 mapped_totals += 1
 
-                #append fragment length/insert-size to fld
-                try:  #paired-end reads
-                    fld.append(r[0].inferred_insert_size)
-                except AttributeError:  #no mate
-                    continue
-                    #fld.append(len(r[0].read.seq))
+            for fsi in list(fs):
+                counts[fsi]['count'] += 1
 
         except UnknownChrom:
             empty += 1
@@ -625,18 +638,21 @@ def main():
     print("Features processed:\t{!s}".format(feature_totals),\
           file=sys.stderr)
     if feature_type:
-        print("  - number of features with relevant type:\t{!s}"\
+        print("  - of relevant type:\t{!s}"\
               .format(feature_type_totals), file=sys.stderr)
     print("Reads processed:\t{!s}".format(aln_totals),\
           file=sys.stderr)
-    print("  - number of mapped reads:\t{!s}".format(nmapped),\
-          file=sys.stderr)
-    print("  - number of reads that successfully mapped to a feature:\t{!s}"\
+    print("  - successfully mapped:\t{!s}"\
           .format(mapped_totals), file=sys.stderr)
-    print("  - number of reads that failed to correctly map to any feature:\t{!s}"\
+    if multi_aln:
+        print("    - ambiguous alignment:\t{!s}".format(ambiguous), \
+              file=sys.stderr)
+    print("  - unmapped:\t{!s}"\
           .format(unmapped_totals), file=sys.stderr)
     print("    - no feature\t{!s}".format(empty), file=sys.stderr)
-    print("    - ambiguous alignment\t{!s}".format(ambiguous), file=sys.stderr)
+    if not multi_aln:
+        print("    - ambiguous alignment\t{!s}".format(ambiguous), \
+              file=sys.stderr)
     print("    - too low alignment quality\t{!s}".format(lowqual), \
           file=sys.stderr)
     print("    - not aligned\t{!s}".format(notaligned), file=sys.stderr)
