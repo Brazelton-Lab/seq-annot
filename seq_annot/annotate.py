@@ -3,9 +3,6 @@
 Annotate a GFF3 file of putative protein-coding genes using the results of a 
 homology search to a database of genes with known or predicted function.
 
-Usage:
-    annotate_features [options] [-m in.json] [-o out.gff] -b in.b6 in.gff
-
 Required input is a GFF3 file of predicted protein-coding genes and a tabular 
 file of pairwise alignments (B6 format). Optional input is a relational 
 database in JSON format containing additional information on a hit. It is 
@@ -16,7 +13,7 @@ underscore.
 The compression algorithm is automatically detected for input files based on 
 the file extension. To compress output, add the appropriate file extension to 
 the output file name (e.g. .gz, .bz2). Leave off '--out' to direct output to 
-standard output (stdout).
+standard output (stdout). Input is taken from standard input (sdtin) by default.
 
 Copyright:
 
@@ -52,7 +49,7 @@ __author__ = "Christopher Thornton"
 __license__ = 'GPLv3'
 __maintainer__ = 'Christopher Thornton'
 __status__ = "Alpha"
-__version__ = "0.1.1"
+__version__ = "0.2.1"
 
 
 def do_nothing(*args):
@@ -105,7 +102,7 @@ def main():
         sep=',',
         help="comma-separated list of fields from the relational database "
              "that should be included as attributes, if relevant")
-    parser.add_argument('-p', '--precedence',
+    parser.add_argument('-c', '--conflict',
         choices=['order', 'quality'],
         default='quality',
         help="method to resolve conflicting annotations [default: quality]. "
@@ -118,13 +115,13 @@ def main():
         help="feature type (3rd column in GFF file) to annotate [default: "
              "annotate features of all type]. All features of other type will "
              "be ignored")
-    parser.add_argument('-d', '--default',
+    parser.add_argument('-p', '--product',
         metavar='STR',
         dest='prod_def',
         help="default product for features without associated product "
              "information in relational database")
     output_control = parser.add_argument_group(title="output control options")
-    output_control.add_argument('-l', '--log',
+    output_control.add_argument('-d', '--discarded',
         metavar='out.log',
         action=Open,
         mode='wt',
@@ -160,7 +157,7 @@ def main():
     # Assign variables based on user inputs
     out_h = args.out.write
     out_log = args.log.write if args.log else do_nothing
-    out_log("#Kept\tDiscarded\tReason")
+    out_log("#Kept\tDiscarded\tReason\n")
 
     if args.map_files:
         mapping = {}
@@ -200,17 +197,20 @@ def main():
 
                     if match_precedence == 'order':
                         # Preserve only best hit on first come basis
-                        out_log("{}\t{}\t{}".format(hits[query].subject, hit.subject, 'order'))
+                        out_log("{}\t{}\t{}\n".format(hits[query].subject, \
+                                hit.subject, 'order'))
                         continue
                     else:
                         # Determine which match has the best alignment score
                         prev_score = hits[query].bit_score
 
                         if prev_score >= hit.bit_score:
-                            out_log("{}\t{}\t{}".format(hits[query].subject, hit.subject, 'score'))
+                            out_log("{}\t{}\t{}\n".format(hits[query].subject, \
+                                    hit.subject, 'score'))
                             continue  #existing match is best
                         else:
-                            out_log("{}\t{}\t{}".format(hit.subject, hits[query].subject, 'score'))
+                            out_log("{}\t{}\t{}\n".format(hit.subject, \
+                                    hits[query].subject, 'score'))
                             hits[query] = hit
 
                 else:
