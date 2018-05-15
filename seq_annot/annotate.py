@@ -98,11 +98,13 @@ def main():
              "qend, sstart, send, evalue, bitscore]")
     parser.add_argument('-f', '--fields',
         metavar='FIELD [,FIELD,...]',
+        dest='fields',
         action=ParseSeparator,
         sep=',',
         help="comma-separated list of fields from the relational database "
              "that should be included as attributes, if relevant")
     parser.add_argument('-c', '--conflict',
+        dest='precedence',
         choices=['order', 'quality'],
         default='quality',
         help="method to resolve conflicting annotations [default: quality]. "
