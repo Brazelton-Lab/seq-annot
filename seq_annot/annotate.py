@@ -123,6 +123,7 @@ def main():
     output_control = parser.add_argument_group(title="output control options")
     output_control.add_argument('-d', '--discarded',
         metavar='out.log',
+        dest='log',
         action=Open,
         mode='wt',
         help="output information on discarded annotations")
