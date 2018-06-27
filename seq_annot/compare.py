@@ -46,7 +46,7 @@ __author__ = 'Christopher Thornton'
 __license__ = 'GPLv3'
 __maintainer__ = 'Christopher Thornton'
 __status__ = "Alpha"
-__version__ = '0.1.1'
+__version__ = '0.1.3'
 
 
 def main():
@@ -64,6 +64,15 @@ def main():
         help="input one or more relational databases in JSON format containing "
              "supplementary information about the features that should be "
              "added to the table")
+    parser.add_argument('-r', '--replicates',
+        metavar='in.tsv',
+        dest='db_overlaps',
+        action=Open,
+        mode='rt',
+        help="tab-separated file containing the identifiers of entries "
+             "contained in more than one of the provided databases. Should "
+             "consist of three columns, corresponding to: ID of template, ID "
+             "of replicate, replicate type. Entry info will be merged")
     parser.add_argument('-f', '--fields',
         metavar='FIELD [,FIELD,...]',
         action=ParseSeparator,
@@ -120,11 +129,62 @@ def main():
         mapping = {}
         for map_file in args.map_files:
             json_map = json.load(open_input(map_file))
-            mapping = {**json_map, **mapping}
+            mapping.update(json_map)
     else:
         mapping = None
 
     fields = args.fields
+
+    # Resolve duplicate database entries by merging
+    if args.db_overlaps and mapping:
+        # Iterate of replicates file
+        for line in args.db_overlaps:
+            split_line = line.strip().split('\t')
+            try:
+                replicate, template, rep_type = split_line
+            except ValueError:
+                print("error: unknown format for replicates file. See help for "
+                      "formatting requirements.", file=sys.stderr)
+                sys.exit(1)
+
+            if not replicate in mapping or not template in mapping:
+                continue
+
+            # Update entries only for fields of interest
+            for field in fields:
+                if field not in mapping[replicate] and field not in mapping[template]:
+                    continue
+                elif field not in mapping[replicate]:
+                    mapping[replicate][field] = mapping[template][field]
+                    continue
+                elif field not in mapping[template]:
+                    mapping[template][field] = mapping[replicate][field]
+                    continue
+                else:
+                    rep_entry = mapping[replicate][field]
+                    temp_entry = mapping[template][field]
+
+                if rep_entry == temp_entry:
+                    continue  #no change
+
+                if type(rep_entry) == type(list()) or type(temp_entry) == type(list()):
+                    merged = []
+                    for i in list(rep_entry) + list(temp_entry):
+                        if i.lower() in merged:
+                            continue
+                        else:
+                            merged.append(i)
+                else:
+                    if not rep_entry:
+                        merged = temp_entry
+                    elif not temp_entry:
+                        merged = re_entry
+                    else:
+                        merged = [rep_entry, temp_entry]
+
+                mapping[replicate][field] = merged
+                mapping[template][field] = merged
+
 
     # Store feature abundances in a dictionary
     totals = 0
