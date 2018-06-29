@@ -51,7 +51,7 @@ __author__ = "Christopher Thornton"
 __license__ = 'GPLv3'
 __maintainer__ = 'Christopher Thornton'
 __status__ = "Alpha"
-__version__ = "0.3.2"
+__version__ = "0.3.4"
 
 
 def screen_aln_quality(hit, evalue=10, identity=0, length=0, score=0):
@@ -231,7 +231,8 @@ def main():
              "will be performed after alignment quality screening")
     screen_method.add_argument('--best',
         action='store_true',
-        help="discard all but the best hit")
+        help="discard all but the best hit. Assumes that multiple hits are "
+             "ordered from best-hit to worst")
     output_control = parser.add_argument_group(title="output control options")
     output_control.add_argument('--snp',
         dest='only_snp',
@@ -293,11 +294,11 @@ def main():
     only_snp = args.only_snp
 
     # Screen hits for alignment quality and/or mutant alleles
-    passed_total = 0
-    failed_qual = 0
-    failed_snp = 0
-    failed_bh = 0
-    aln_totals = 0
+    passed_total = 0  #hits passed screening
+    failed_qual = 0  #hits failed due to alignment quality
+    failed_snp = 0  #hits failed due to SNP screening
+    failed_bh = 0  #hits failed due to best-hit criteria
+    aln_totals = 0  #all alignments in B6 file
     queries = []
     for hit in b6_iter(args.b6, header=specifiers):
         aln_totals += 1
@@ -305,7 +306,9 @@ def main():
         if bh:
             query = hit.query
             if query in queries:
+
                 failed_bh += 1
+                out_d(hit.write(defaults=default_only))
                 continue
             else:
                 queries.append(query)
