@@ -38,6 +38,7 @@ from __future__ import print_function
 from arandomness.argparse import Open
 import argparse
 from bio_utils.iterators import gff3_iter
+import os
 from seq_annot.seqio import open_input
 import sys
 import textwrap
@@ -47,7 +48,7 @@ __author__ = 'Christopher Thornton'
 __license__ = 'GPLv3'
 __maintainer__ = 'Christopher Thornton'
 __status__ = "Alpha"
-__version__ = '0.1.0'
+__version__ = '0.1.2'
 
 
 def do_nothing(args):
@@ -102,13 +103,16 @@ def main():
     overlap_precedence = args.precedence
 
     gff_totals = 0
-    overlap_totals = 0
-    passed_totals = 0
+    o_totals = 0
+    p_totals = 0
 
-    uniques = {}  #to store unique features
+    uniques = {}  #store unique features
+    ind_totals = {}  #store individual GFF3 feature totals
 
     # Output unique features
     for position, gff in enumerate(args.gffs):
+        gff_base = os.path.basename(gff)
+        ind_totals[gff_base] = 0
 
         with open_input(gff) as gff_h:
             for feature in gff3_iter(gff_h):
@@ -125,16 +129,17 @@ def main():
                               "correctly", file=sys.stderr)
                         sys.exit(1)
 
+                gff_totals += 1
+                ind_totals[gff_base] += 1
+
                 start = feature.start
                 end = feature.end
                 strand = feature.strand
                 
-                gff_totals += 1
-
                 try:
                     chrom = uniques[seq_id]
                 except KeyError:
-                    passed_totals += 1
+                    p_totals += 1
                     uniques[seq_id] = [(position, feature)]  #first feature
                     continue
 
@@ -165,24 +170,24 @@ def main():
                                 if parent == chrom_feat.attributes['ID']:
                                     continue
 
-                            overlap_totals += 1
+                            o_totals += 1
                             is_unique = False
                             break  #found overlap, no need to continue
 
                     if is_unique:
                         # Feature does not fall within the interval of another, so 
                         # add to uniques
-                        passed_totals += 1
+                        p_totals += 1
                         uniques[seq_id].append((position, feature))
                     else:
                         out_d(feature.write())
                 else:
-                    passed_totals += 1
+                    p_totals += 1
                     uniques[seq_id].append((position, feature))
 
 
     # Output combined GFF3
-    header = "##gff-version  3\n"
+    header = "##gff-version 3\n"
     out_h(header)
 
     for chrom in sorted(uniques):
@@ -195,18 +200,22 @@ def main():
             out_h(entry.write())
 
     # Calculate and print statistics
-    print("Features processed:\t{!s}".format(gff_totals), \
+    print("Features processed:", file=sys.stderr)
+    print("  - feature totals:\t{!s}".format(gff_totals), file=sys.stderr)
+    for gff in ind_totals:
+        print("    - features in {}:\t{!s}".format(gff, ind_totals[gff]), \
+              file=sys.stderr)
+    print("  - successfully merged:\t{!s}".format(p_totals), file=sys.stderr)
+    print("  - discarded due to overlapping feature:\t{!s}".format(o_totals), \
           file=sys.stderr)
-    print("  - features remaining after merging:\t{!s}"\
-          .format(passed_totals), file=sys.stderr)
-    print("  - features overlapping a higher precedence feature:\t{!s}\n"\
-          .format(overlap_totals), file=sys.stderr)
+    print("")
 
     # Calculate and print program run-time
     end_time = time()
     total_time = (end_time - start_time) / 60.0
-    print("It took {:.2e} minutes to combine {!s} features\n"\
+    print("It took {:.2e} minutes to combine {!s} features"\
           .format(total_time, gff_totals), file=sys.stderr)
+    print("")
 
 
 if __name__ == "__main__":

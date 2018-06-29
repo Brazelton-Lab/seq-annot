@@ -51,7 +51,7 @@ __author__ = "Christopher Thornton"
 __license__ = 'GPLv3'
 __maintainer__ = 'Christopher Thornton'
 __status__ = "Alpha"
-__version__ = "0.3.1"
+__version__ = "0.3.2"
 
 
 def screen_aln_quality(hit, evalue=10, identity=0, length=0, score=0):
@@ -370,28 +370,29 @@ def main():
             out_d(hit.write(defaults=default_only))
 
     # Output screening statistics
-    print("Alignments processed:\t{!s}".format(aln_totals), \
+    print("Alignments processed:", file=sys.stderr)
+    print("  - alignment totals:\t{!s}".format(aln_totals), file=sys.stderr)
+    print("  - passed screening criteria:\t{!s}".format(passed_total), \
           file=sys.stderr)
-    print("  - alignments that passed screening:\t{!s}".format(passed_total), \
-          file=sys.stderr)
-    print("  - alignments that failed screening:\t{!s}".format(aln_totals - \
+    print("  - failed screening criteria:\t{!s}".format(aln_totals - \
           passed_total), file=sys.stderr)
     if e_thresh or len_thresh or id_thresh or score_field:
-        print("    - by alignment quality:\t{!s}".format(failed_qual), \
+        print("    - due to alignment quality:\t{!s}".format(failed_qual), \
               file=sys.stderr)
     if snp_field:
-        print("    - by secondary SNP screening:\t{!s}".format(failed_snp), \
+        print("    - due to secondary SNP screening:\t{!s}".format(failed_snp), \
               file=sys.stderr)
     if bh:
-        print("    - by best hit filtering:\t{!s}".format(failed_bh), \
+        print("    - due to best hit filtering:\t{!s}".format(failed_bh), \
               file=sys.stderr)
     print("")
  
     # Calculate and print program run-time
     end_time = time()
     total_time = (end_time - start_time) / 60.0
-    print("It took {:.2e} minutes to screen {!s} alignments\n"\
+    print("It took {:.2e} minutes to screen {!s} alignments"\
           .format(total_time, aln_totals), file=sys.stderr)
+    print("")
 
 
 if __name__ == "__main__":
