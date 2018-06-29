@@ -49,7 +49,7 @@ __author__ = "Christopher Thornton"
 __license__ = 'GPLv3'
 __maintainer__ = 'Christopher Thornton'
 __status__ = "Alpha"
-__version__ = "0.2.1"
+__version__ = "0.2.3"
 
 
 def do_nothing(*args):
@@ -177,26 +177,25 @@ def main():
     feature_type = args.ftype
 
     # Initiate statistics variables
-    hits_totals = 0
-    conflict_totals = 0
-    no_map = 0
     no_fields = {}
     for map_field in map_fields:
         no_fields[map_field] = 0
 
     # Parse results of the homology search
+    aln_totals = 0  #all hits to any database
+    dis_totals = 0  #multiple annotations for single query
     hits = {}  #store matches and additional attributes
     for b6 in args.b6:
 
         with open_input(b6) as b6_h:
             for hit in b6_iter(b6_h, header=specifiers):
 
-                hits_totals += 1
+                aln_totals += 1
 
                 query = hit.query
 
                 if query in hits:
-                    conflict_totals += 1
+                    dis_totals += 1
 
                     if match_precedence == 'order':
                         # Preserve only best hit on first come basis
@@ -220,10 +219,10 @@ def main():
                     hits[query] = hit
 
     # Parse GFF file, adding annotations from homology search and relational db
-    gff_totals = 0
-    annotated_totals = 0
-    feature_type_totals = 0
-    unknown_totals = 0
+    gff_totals = 0  #all features contained in GFF
+    annotated_totals = 0  #all features with annotation
+    ftype_totals = 0  #features with type matching argument input
+    no_map = 0  #track hits without an entry in the relational database
     prev_name = None
     for entry in gff3_iter(args.gff, parse_attr=True, headers=True):
         try:
@@ -238,10 +237,6 @@ def main():
         gff_totals += 1
 
         feature_id = entry.attributes['ID'].split('_')[-1]  #id is second value
-
-        # clear existing attributes if directed
-        if args.clear_attrs:
-            entry.attributes.clear()
 
         # Keep track of output ID attribute components
         if seq_id == prev_name:
@@ -261,40 +256,48 @@ def main():
                     out_h(entry.write())
                 continue
             else:
-                feature_type_totals += 1
+                ftype_totals += 1
+
+        # clear existing attributes if directed
+        if args.clear_attrs:
+            entry.attributes.clear()
+            entry.attributes['ID'] = unique_id
 
         # Annotate features using attributes field
         try:
             # Query name should be sequenceID_featureID
             hit = hits["{}_{}".format(seq_id, feature_id)]
         except KeyError:
-            # Discard feature if unable to annotate
+            # Discard feature if unable to annotate and flag provided
             if args.filter:
                 continue
         else:
+            annotated_totals += 1
             subject = hit.subject
 
             attrs = [('Name', subject)]
+            # Include additional information about a hit if a relational 
+            # database provided
             if mapping:
                 try:
                     sub_entry = mapping[subject]
                 except KeyError:
                     no_map += 1
                 else:
+                    # Only include information from the requested fields
                     for field in map_fields:
                         try:
                             entry_value = sub_entry[field]
                         except KeyError:
                             no_fields[field] += 1
                         else:
-                            if entry_value:
+                            if entry_value:  #entry field might be blank
                                 attrs.append((field, entry_value))
 
-            annotated_totals += 1
             for attr in attrs:
                 entry.attributes[attr[0]] = attr[1]  #(name, value)
 
-        # Add default to product attribute if doesn't exist
+        # Add default to product attribute if it doesn't already exist
         if 'product' not in entry.attributes and default_product:
             entry.attributes['product'] = default_product
 
@@ -313,22 +316,25 @@ def main():
                   "entry with field '{}' in a mapping file\n"\
                   .format(no_map_size, field), file=sys.stderr)
 
-    print("Alignments processed:\t{!s}".format(hits_totals), \
-          file=sys.stderr)
-    print("Features processed:\t{!s}".format(gff_totals), file=sys.stderr)
+    print("Alignments processed:", file=sys.stderr)
+    print("  - alignment totals:\t{!s}".format(aln_totals), file=sys.stderr)
+    print("  - discarded due to conflicting annotations:\t{!s}"\
+          .format(dis_totals), file=sys.stderr)
+    print("Features processed:", file=sys.stderr)
+    print("  - feature totals:\t{!s}".format(gff_totals), file=sys.stderr)
     if feature_type:
-        print("  - of relevant type:\t{!s}"\
-              .format(feature_type_totals), file=sys.stderr)
-    print("  - single aligned reference:\t{!s}"\
-          .format(annotated_totals), file=sys.stderr)
-    print("  - multiple aligned references:\t{!s}\n"\
-          .format(conflict_totals), file=sys.stderr)
+        print("  - of relevant type:\t{!s}".format(ftype_totals), \
+              file=sys.stderr)
+    print("  - with annotation:\t{!s}".format(annot_totals), \
+          file=sys.stderr)
+    print("")
 
     # Calculate and print program run-time
     end_time = time()
     total_time = (end_time - start_time) / 60.0
-    print("It took {:.2e} minutes to annotate {!s} features\n"\
+    print("It took {:.2e} minutes to annotate {!s} features"\
           .format(total_time, gff_totals), file=sys.stderr)
+    print("")
 
 
 if __name__ == "__main__":

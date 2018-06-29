@@ -243,18 +243,19 @@ def main():
         out_h("{}\t{}\n".format(feature, '\t'.join(entries)))
 
     # Output statistics
-    feature_totals = len(abundances)
-    sample_totals = len(sample_names)
-    print("Features compared:\t{!s}".format(feature_totals),\
-          file=sys.stderr)
-    print("Samples merged:\t{!s}\n".format(sample_totals),\
-          file=sys.stderr)
+    f_totals = len(abundances)
+    s_totals = len(sample_names)
+    print("Features processed:", file=sys.stderr)
+    print("  - feature totals:\t{!s}".format(f_totals), file=sys.stderr)
+    print("  - samples merged:\t{!s}".format(s_totals), file=sys.stderr)
+    print("")
 
     # Calculate and print program run-time info
     end_time = time()
     total_time = (end_time - start_time) / 60.0
-    print("It took {:.2e} minutes to merge {!s} samples\n"\
-          .format(total_time, sample_totals), file=sys.stderr)
+    print("It took {:.2e} minutes to merge {!s} samples"\
+          .format(total_time, s_totals), file=sys.stderr)
+    print("")
 
 
 if __name__ == "__main__":

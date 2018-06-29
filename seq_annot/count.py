@@ -53,7 +53,7 @@ __author__ = 'Christopher Thornton'
 __license__ = 'GPLv3'
 __maintainer__ = 'Christopher Thornton'
 __status__ = "Beta"
-__version__ = '1.4.8'
+__version__ = '1.4.9'
 
 
 class UnknownChrom(Exception):
@@ -341,13 +341,13 @@ def main():
     counts = {}
 
     no_attr = 0
-    feature_totals = 0
-    feature_type_totals = 0
+    f_totals = 0
+    ftype_totals = 0
     try:
         gff = HTSeq.GFF_Reader(args.feature_file)
 
         for f in gff:
-            feature_totals += 1
+            f_totals += 1
 
             try:
                 feature_id = f.attr[id_field]
@@ -358,7 +358,7 @@ def main():
             # Skip features of wrong type
             if feature_type:
                 if f.type == feature_type:
-                    feature_type_totals += 1
+                    ftype_totals += 1
                 else:
                     continue
 
@@ -373,7 +373,7 @@ def main():
         sys.exit(1)
 
     # Verify GFF3 file contains features of the specified type
-    if feature_type_totals == 0:
+    if ftype_totals == 0:
         print("error: no features of type '{}' found.\n"
             .format(feature_type), file=sys.stderr)
         sys.exit(1)
@@ -413,12 +413,12 @@ def main():
     notaligned = 0  #unaligned reads
     lowqual = 0  #reads not passing minimum threshold for alignment quality
     nonunique = 0  #reads having multiple alignments with similar score
-    aln_totals = 0  #total reads
-    mapped_totals = 0  #correctly mapped to a feature
+    r_totals = 0  #total reads
+    aln_totals = 0  #correctly mapped to a feature
     fld = []  #fragment length / insert-size distribution 
     for r in read_seq:
 
-        aln_totals += 1
+        r_totals += 1
 
         if not pe_mode:  #single-end read mapping
 
@@ -533,7 +533,7 @@ def main():
                 if not multi_aln:
                     continue
             else:
-                mapped_totals += 1
+                aln_totals += 1
 
             for fsi in list(fs):
                 counts[fsi]['count'] += 1
@@ -541,9 +541,9 @@ def main():
         except UnknownChrom:
             empty += 1
 
-    unmapped_totals = empty + ambiguous + lowqual + notaligned + nonunique + \
+    unaln_totals = empty + ambiguous + lowqual + notaligned + nonunique + \
                       duplicate
-    nmapped = mapped_totals + empty + ambiguous + nonunique + lowqual
+    nmapped = aln_totals + empty + ambiguous + nonunique + lowqual
 
     # Set scaling function
     if args.norm == 'fpk':
@@ -627,7 +627,7 @@ def main():
 
     # "UNMAPPED" can be interpreted as a single unknown gene of length one
     # kilobase recruiting all reads that failed to map to input features
-    #abundances['UNMAPPED'] = unmapped_totals
+    #abundances['UNMAPPED'] = unaln_totals
 
     # Output abundances
     for fn in sorted(abundances):
@@ -635,20 +635,20 @@ def main():
             out_h("{}\t{!s}\n".format(fn, abundances[fn]))
 
     # Output statistics
-    print("Features processed:\t{!s}".format(feature_totals),\
-          file=sys.stderr)
+    print("Features processed:", file=sys.stderr)
+    print("  - feature totals:\t{!s}".format(f_totals), file=sys.stderr)
     if feature_type:
-        print("  - of relevant type:\t{!s}"\
-              .format(feature_type_totals), file=sys.stderr)
-    print("Reads processed:\t{!s}".format(aln_totals),\
+        print("  - of relevant type:\t{!s}".format(ftype_totals), \
+              file=sys.stderr)
+    print("Reads processed:", file=sys.stderr)
+    print("  - read totals:\t{!s}".format(r_totals), file=sys.stderr)
+    print("  - successfully mapped:\t{!s}".format(aln_totals), \
           file=sys.stderr)
-    print("  - successfully mapped:\t{!s}"\
-          .format(mapped_totals), file=sys.stderr)
     if multi_aln:
         print("    - ambiguous alignment:\t{!s}".format(ambiguous), \
               file=sys.stderr)
-    print("  - unmapped:\t{!s}"\
-          .format(unmapped_totals), file=sys.stderr)
+    print("  - unsuccessfully mapped:\t{!s}".format(unaln_totals), \
+          file=sys.stderr)
     print("    - no feature\t{!s}".format(empty), file=sys.stderr)
     if not multi_aln:
         print("    - ambiguous alignment\t{!s}".format(ambiguous), \
@@ -657,14 +657,16 @@ def main():
           file=sys.stderr)
     print("    - not aligned\t{!s}".format(notaligned), file=sys.stderr)
     print("    - duplicate\t{!s}".format(duplicate), file=sys.stderr)
-    print("    - alignment not unique\t{!s}\n".format(nonunique), \
+    print("    - alignment not unique\t{!s}".format(nonunique), \
           file=sys.stderr)
+    print("")
 
     # Calculate and print program run-time
     end_time = time()
     total_time = (end_time - start_time) / 60.0
-    print("It took {:.2e} minutes to count {!s} fragments for {!s} features\n"\
-          .format(total_time, aln_totals, feature_totals), file=sys.stderr)
+    print("It took {:.2e} minutes to count {!s} fragments for {!s} features"\
+          .format(total_time, r_totals, f_totals), file=sys.stderr)
+    print("")
 
 
 if __name__ == "__main__":
