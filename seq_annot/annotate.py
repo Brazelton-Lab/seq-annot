@@ -274,7 +274,7 @@ def main():
             if args.filter:
                 continue
         else:
-            annotated_totals += 1
+            annot_totals += 1
             subject = hit.subject
 
             attrs = [('Name', subject)]
