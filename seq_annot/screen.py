@@ -176,7 +176,7 @@ def main():
     parser.add_argument('-o', '--out',
         metavar='out.b6',
         action=Open,
-        mode='wt',
+        mode='w',
         default=sys.stdout,
         help="output screened alignments in B6/M8 format [default: output to "
               "stdout]")

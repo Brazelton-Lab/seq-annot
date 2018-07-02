@@ -85,7 +85,7 @@ def main():
     parser.add_argument('-o', '--out',
         metavar='out.gff',
         action=Open,
-        mode='wt',
+        mode='w',
         default=sys.stdout,
         help="output annotated features in GFF3 format [default: output to "
              "stdout]")
@@ -162,24 +162,26 @@ def main():
     out_log = args.log.write if args.log else do_nothing
     out_log("#Kept\tDiscarded\tReason\n")
 
-    if args.map_files:
-        mapping = {}
-        for map_file in args.map_files:
-            json_map = json.load(open_input(map_file))
-            mapping = {**json_map, **mapping}
-    else:
-        mapping = None
-
     map_fields = args.fields
     match_precedence = args.precedence
     specifiers = args.format
     default_product = args.prod_def
     feature_type = args.ftype
 
-    # Initiate statistics variables
-    no_fields = {}
-    for map_field in map_fields:
-        no_fields[map_field] = 0
+    if args.map_files:
+        no_fields = {}
+        mapping = {}
+
+        # Load mapping information
+        for map_file in args.map_files:
+            json_map = json.load(open_input(map_file))
+            mapping = {**json_map, **mapping}
+
+        # Initiate statistics variables
+        for map_field in map_fields:
+            no_fields[map_field] = 0
+    else:
+        mapping = None
 
     # Parse results of the homology search
     aln_totals = 0  #all hits to any database

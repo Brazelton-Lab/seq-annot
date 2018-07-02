@@ -181,7 +181,7 @@ def main():
     parser.add_argument('-o', '--out',
         metavar='out.csv',
         action=Open,
-        mode='wt',
+        mode='w',
         default=sys.stdout,
         help="output tabular file of feature abundances [default: output "
              "to stdout]")
@@ -336,13 +336,15 @@ def main():
     else:
         mapping = None
 
-    # Iterate over GFF3 file, storing features to estimate coverage for
+    # Store features in genomic arrays
     features = HTSeq.GenomicArrayOfSets("auto", stranded=False)
     counts = {}
 
+    # Iterate over GFF3 file, storing features to estimate coverage for
     no_attr = 0
     f_totals = 0
     ftype_totals = 0
+
     try:
         gff = HTSeq.GFF_Reader(args.feature_file)
 
@@ -363,7 +365,7 @@ def main():
                     continue
 
             # Store feature length for normalization
-            feature_length = abs(f.iv.end - f.iv.start)
+            feature_length = abs(f.iv.end - f.iv.start + 1)
 
             features[f.iv] += feature_id  #for mapping alignments
             counts[feature_id] = {'count': 0, 'length': feature_length}
