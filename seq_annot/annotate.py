@@ -222,7 +222,7 @@ def main():
 
     # Parse GFF file, adding annotations from homology search and relational db
     gff_totals = 0  #all features contained in GFF
-    annotated_totals = 0  #all features with annotation
+    annot_totals = 0  #all features with annotation
     ftype_totals = 0  #features with type matching argument input
     no_map = 0  #track hits without an entry in the relational database
     prev_name = None
