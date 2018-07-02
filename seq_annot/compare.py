@@ -81,7 +81,7 @@ def main():
             "that should be added to the table")
     parser.add_argument('-o', '--out',
         action=Open,
-        mode='wt',
+        mode='w',
         default=sys.stdout,
         help="output tabular feature by sample table [default: output to stdout]")
     parser.add_argument('-n', '--names',

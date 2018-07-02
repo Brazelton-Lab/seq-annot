@@ -65,7 +65,7 @@ def main():
     parser.add_argument('-o', '--out',
         metavar='out.gff',
         action=Open,
-        mode='wt',
+        mode='w',
         default=sys.stdout,
         help="output combined features in GFF3 format [default: output to "
              "stdout]")
@@ -74,7 +74,15 @@ def main():
         default='none',
         help="method to resolve overlapping features [default: none]. "
              "Options are 'order' and 'none'. If 'order', precedence will "
-             "be determined by input file order.")
+             "be determined by input file order")
+    parser.add_argument('--preserve',
+        dest='preserve_within',
+        action='store_true',
+        help="preserve features if they overlap within a GFF file")
+    parser.add_argument('--stranded',
+        dest='allow_diff_strand',
+        action='store_true',
+        help="preserve features if they overlap but only on different strands")
     parser.add_argument('-d', '--discarded',
         metavar='out.gff',
         action=Open,
@@ -107,6 +115,7 @@ def main():
     p_totals = 0
 
     uniques = {}  #store unique features
+    chroms = {}  #store location of feature
     ind_totals = {}  #store individual GFF3 feature totals
 
     # Output unique features
@@ -120,10 +129,10 @@ def main():
                 try:
                     seq_id = feature.seqid
                 except AttributeError:
-                    if feature.startswith('##'):  #output headers
+                    if feature.startswith('##'):  #headers
                         continue
                     elif feature.startswith('#'):
-                        continue  #don't output comments
+                        continue  #comments
                     else:
                         print("error: GFF3 file does not seem to be formatted "
                               "correctly", file=sys.stderr)
@@ -132,44 +141,49 @@ def main():
                 gff_totals += 1
                 ind_totals[gff_base] += 1
 
-                start = feature.start
-                end = feature.end
-                strand = feature.strand
+                ident = feature.attributes["ID"]
+
+                if "Parent" in feature.attributes:
+                    parent_id = feature.attributes["Parent"]
+                    try:
+
+                        parent.add_child(feature)
+                        continue
+                    except AttributeError:
+                        
                 
                 try:
                     chrom = uniques[seq_id]
                 except KeyError:
                     p_totals += 1
-                    uniques[seq_id] = [(position, feature)]  #first feature
+                    uniques[seq_id] = [(position, feature)]
                     continue
 
                 if overlap_precedence == "order":
-                    is_unique = True  #assume unique
+                    is_unique = True  #assume feature is unique
+
+                    start = feature.start
+                    end = feature.end
+                    strand = feature.strand
+
                     # Check if feature falls within the interval of another
                     for item in chrom:
                         chrom_feat = item[1]
 
-                        # Allow overlap if from the same GFF3 file
+                        # Allow overlap for features in the same GFF3 file
                         chrom_pos = item[0]
-                        if position == chrom_pos:
+                        if position == chrom_pos and args.preserve_within:
                             continue
 
                         # Allow features to overlap on different strands
-                        if (strand == '+' and chrom_feat.strand == '-') or \
-                            (strand == '-' and chrom_feat.strand == '+'):
+                        if args.allow_diff_strands and \
+                            ((strand == '+' and chrom_feat.strand == '-') or \
+                            (strand == '-' and chrom_feat.strand == '+')):
                             continue
 
-                        int_1 = list(range(chrom_feat.start, chrom_feat.end + 1))
-                        int_2 = list(range(start, end + 1))
-                        if ((int(start) in int_1) or (int(end) in int_1)) or \
-                            ((int(chrom_feat.start) in int_2) or \
-                            (int(chrom_feat.end) in int_2)):
-                            # Determine if feature is a child of existing feature
-                            if "Parent" in feature.attributes:
-                                parent = feature.attributes["Parent"]
-                                if parent == chrom_feat.attributes['ID']:
-                                    continue
-
+                        iv_1 = set(range(chrom_feat.start, chrom_feat.end + 1))
+                        iv_2 = set(range(start, end + 1))
+                        if len(iv_1.intersection(iv_2)) > 0:
                             o_totals += 1
                             is_unique = False
                             break  #found overlap, no need to continue
@@ -185,7 +199,6 @@ def main():
                     p_totals += 1
                     uniques[seq_id].append((position, feature))
 
-
     # Output combined GFF3
     header = "##gff-version 3\n"
     out_h(header)
@@ -194,10 +207,23 @@ def main():
         chrom_feature = 0
         for item in uniques[chrom]:
             chrom_feature += 1
-
             entry = item[1]
-            entry.attributes['ID'] = '{}_{!s}'.format(entry.seqid, chrom_feature)
+
+            # Update ID attribute to ensure uniqueness
+            old_ident = entry.attributes['ID']
+            new_ident = '{}_{!s}'.format(entry.seqid, chrom_feature)
+
+            entry.attributes['ID'] = new_ident
             out_h(entry.write())
+
+            if entry.children:
+                for child in entry.children:
+                    chrom_feature += 1
+                    entry.attributes['ID'] = '{}_{!s}'.format(child.seqid, chrom_feature)
+
+                    # Update Parent attribute with new parent ID
+                    child.attributes['Parent'] = new_ident
+                    out_h(child.write())
 
     # Calculate and print statistics
     print("Features processed:", file=sys.stderr)
