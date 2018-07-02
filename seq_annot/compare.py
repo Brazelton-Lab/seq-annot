@@ -81,7 +81,7 @@ def main():
             "that should be added to the table")
     parser.add_argument('-o', '--out',
         action=Open,
-        mode='w',
+        mode='wb',
         default=sys.stdout,
         help="output tabular feature by sample table [default: output to stdout]")
     parser.add_argument('-n', '--names',
@@ -218,7 +218,7 @@ def main():
         header_columns = sample_names
 
     header = "Feature\t{}\n".format('\t'.join(header_columns))
-    out_h(header)
+    out_h(header.encode('utf-8'))
 
     # Output feature abundances by sample
     for feature in sorted(abundances):
@@ -240,7 +240,7 @@ def main():
                 entries.append(entry)
 
         entries = entries + ['{0:.2f}'.format(i) for i in abundances[feature]]
-        out_h("{}\t{}\n".format(feature, '\t'.join(entries)))
+        out_h("{}\t{}\n".format(feature, '\t'.join(entries)).encode('utf-8'))
 
     # Output statistics
     f_totals = len(abundances)

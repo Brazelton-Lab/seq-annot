@@ -65,7 +65,7 @@ def main():
     parser.add_argument('-o', '--out',
         metavar='out.gff',
         action=Open,
-        mode='w',
+        mode='wb',
         default=sys.stdout,
         help="output combined features in GFF3 format [default: output to "
              "stdout]")
@@ -86,7 +86,7 @@ def main():
     parser.add_argument('-d', '--discarded',
         metavar='out.gff',
         action=Open,
-        mode='wt',
+        mode='wb',
         help="output features in GFF3 format discarded due to overlapping "
              "intervals")
     parser.add_argument('--version',
@@ -194,14 +194,14 @@ def main():
                         p_totals += 1
                         uniques[seq_id].append((position, feature))
                     else:
-                        out_d(feature.write())
+                        out_d(feature.write().encode('utf-8'))
                 else:
                     p_totals += 1
                     uniques[seq_id].append((position, feature))
 
     # Output combined GFF3
     header = "##gff-version 3\n"
-    out_h(header)
+    out_h(header.encode('utf-8'))
 
     for chrom in sorted(uniques):
         chrom_feature = 0
@@ -214,7 +214,7 @@ def main():
             new_ident = '{}_{!s}'.format(entry.seqid, chrom_feature)
 
             entry.attributes['ID'] = new_ident
-            out_h(entry.write())
+            out_h(entry.write().encode('utf-8'))
 
             if entry.children:
                 for child in entry.children:
@@ -223,7 +223,7 @@ def main():
 
                     # Update Parent attribute with new parent ID
                     child.attributes['Parent'] = new_ident
-                    out_h(child.write())
+                    out_h(child.write().encode('utf-8'))
 
     # Calculate and print statistics
     print("Features processed:", file=sys.stderr)

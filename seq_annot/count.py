@@ -181,7 +181,7 @@ def main():
     parser.add_argument('-o', '--out',
         metavar='out.csv',
         action=Open,
-        mode='w',
+        mode='wb',
         default=sys.stdout,
         help="output tabular file of feature abundances [default: output "
              "to stdout]")
@@ -634,7 +634,7 @@ def main():
     # Output abundances
     for fn in sorted(abundances):
         if not fn.startswith("unkwn_"):
-            out_h("{}\t{!s}\n".format(fn, abundances[fn]))
+            out_h("{}\t{!s}\n".format(fn, abundances[fn]).encode('utf-8'))
 
     # Output statistics
     print("Features processed:", file=sys.stderr)
