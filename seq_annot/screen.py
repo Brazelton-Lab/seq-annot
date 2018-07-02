@@ -176,7 +176,7 @@ def main():
     parser.add_argument('-o', '--out',
         metavar='out.b6',
         action=Open,
-        mode='w',
+        mode='wb',
         default=sys.stdout,
         help="output screened alignments in B6/M8 format [default: output to "
               "stdout]")
@@ -246,7 +246,7 @@ def main():
     output_control.add_argument('-d', '--discarded',
         metavar='out.b6',
         action=Open,
-        mode='wt',
+        mode='wb',
         help="output discarded hits to file")
     parser.add_argument('--version',
         action='version',
@@ -308,7 +308,7 @@ def main():
             if query in queries:
 
                 failed_bh += 1
-                out_d(hit.write(defaults=default_only))
+                out_d(hit.write(defaults=default_only).encode('utf-8'))
                 continue
             else:
                 queries.append(query)
@@ -359,18 +359,18 @@ def main():
 
                 if s_pass:
                     passed_total += 1
-                    out_h(hit.write(defaults=default_only))
+                    out_h(hit.write(defaults=default_only).encode('utf-8'))
                 else:
                     failed_snp += 1
-                    out_d(hit.write(defaults=default_only))
+                    out_d(hit.write(defaults=default_only).encode('utf-8'))
 
             else:
                 passed_total += 1
-                out_h(hit.write(defaults=default_only))
+                out_h(hit.write(defaults=default_only).encode('utf-8'))
 
         else:
             failed_qual += 1
-            out_d(hit.write(defaults=default_only))
+            out_d(hit.write(defaults=default_only).encode('utf-8'))
 
     # Output screening statistics
     print("Alignments processed:", file=sys.stderr)

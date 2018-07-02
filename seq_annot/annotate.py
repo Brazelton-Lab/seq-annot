@@ -85,7 +85,7 @@ def main():
     parser.add_argument('-o', '--out',
         metavar='out.gff',
         action=Open,
-        mode='w',
+        mode='wb',
         default=sys.stdout,
         help="output annotated features in GFF3 format [default: output to "
              "stdout]")
@@ -127,7 +127,7 @@ def main():
         metavar='out.log',
         dest='log',
         action=Open,
-        mode='wt',
+        mode='wb',
         help="output information on discarded annotations")
     output_control.add_argument('--filter',
         action='store_true',
@@ -160,7 +160,7 @@ def main():
     # Assign variables based on user inputs
     out_h = args.out.write
     out_log = args.log.write if args.log else do_nothing
-    out_log("#Kept\tDiscarded\tReason\n")
+    out_log("#Kept\tDiscarded\tReason\n".encode('utf-8'))
 
     map_fields = args.fields
     match_precedence = args.precedence
@@ -202,7 +202,7 @@ def main():
                     if match_precedence == 'order':
                         # Preserve only best hit on first come basis
                         out_log("{}\t{}\t{}\n".format(hits[query].subject, \
-                                hit.subject, 'order'))
+                                hit.subject, 'order').encode('utf-8'))
                         continue
                     else:
                         # Determine which match has the best alignment score
@@ -210,11 +210,11 @@ def main():
 
                         if prev_score >= hit.bit_score:
                             out_log("{}\t{}\t{}\n".format(hits[query].subject, \
-                                    hit.subject, 'score'))
+                                    hit.subject, 'score').encode('utf-8'))
                             continue  #existing match is best
                         else:
                             out_log("{}\t{}\t{}\n".format(hit.subject, \
-                                    hits[query].subject, 'score'))
+                                    hits[query].subject, 'score').encode('utf-8'))
                             hits[query] = hit
 
                 else:
@@ -231,7 +231,7 @@ def main():
             seq_id = entry.seqid
         except AttributeError:
             if entry.startswith('##'):
-                out_h("{}\n".format(entry))
+                out_h("{}\n".format(entry).encode('utf-8'))
                 continue
             else:
                 continue  #don't output comments
@@ -255,7 +255,7 @@ def main():
         if feature_type:
             if feature_type != entry.type:
                 if not args.filter:
-                    out_h(entry.write())
+                    out_h(entry.write().encode('utf-8'))
                 continue
             else:
                 ftype_totals += 1
@@ -304,7 +304,7 @@ def main():
             entry.attributes['product'] = default_product
 
         # Write features to new GFF3 file
-        out_h(entry.write())
+        out_h(entry.write().encode('utf-8'))
 
     # Calculate and print statistics
     if no_map > 0:
