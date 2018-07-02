@@ -168,8 +168,8 @@ def main():
     default_product = args.prod_def
     feature_type = args.ftype
 
+    no_fields = {}
     if args.map_files:
-        no_fields = {}
         mapping = {}
 
         # Load mapping information
