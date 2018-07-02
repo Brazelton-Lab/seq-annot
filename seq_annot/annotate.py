@@ -238,7 +238,12 @@ def main():
 
         gff_totals += 1
 
-        feature_id = entry.attributes['ID'].split('_')[-1]  #id is second value
+        try:
+            feature_id = entry.attributes['ID'].split('_')[-1]  #id is second value
+        except TypeError:
+            print("error: unable to find the ID attribute in line {}"\
+                  .format(entry.write()), file=sys.stderr)
+            sys.exit(1)
 
         # Keep track of output ID attribute components
         if seq_id == prev_name:
