@@ -242,7 +242,7 @@ def main():
             feature_id = entry.attributes['ID'].split('_')[-1]  #id is second value
         except TypeError:
             print("error: unable to find the ID attribute in line {}"\
-                  .format(entry.write()), file=sys.stderr)
+                  .format(entry.origline), file=sys.stderr)
             sys.exit(1)
 
         # Keep track of output ID attribute components
@@ -299,6 +299,7 @@ def main():
                             no_fields[field] += 1
                         else:
                             if entry_value:  #entry field might be blank
+                                entry_value = entry_value.lstrip().replace(';', ',')
                                 attrs.append((field, entry_value))
 
             for attr in attrs:
@@ -334,14 +335,14 @@ def main():
               file=sys.stderr)
     print("  - with annotation:\t{!s}".format(annot_totals), \
           file=sys.stderr)
-    print("")
+    print("\n")
 
     # Calculate and print program run-time
     end_time = time()
     total_time = (end_time - start_time) / 60.0
     print("It took {:.2e} minutes to annotate {!s} features"\
           .format(total_time, gff_totals), file=sys.stderr)
-    print("")
+    print("\n")
 
 
 if __name__ == "__main__":
