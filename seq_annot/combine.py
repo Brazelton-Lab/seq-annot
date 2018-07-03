@@ -39,7 +39,7 @@ from arandomness.argparse import Open
 import argparse
 from bio_utils.iterators import gff3_iter
 import os
-from seq_annot.seqio import open_input
+from seq_annot.seqio import open_io
 import sys
 import textwrap
 from time import time
@@ -123,7 +123,7 @@ def main():
         gff_base = os.path.basename(gff)
         ind_totals[gff_base] = 0
 
-        with open_input(gff) as gff_h:
+        with open_io(gff) as gff_h:
             for feature in gff3_iter(gff_h):
 
                 try:

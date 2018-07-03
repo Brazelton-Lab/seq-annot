@@ -40,7 +40,7 @@ from arandomness.argparse import Open, ParseSeparator
 import argparse
 from bio_utils.iterators import b6_iter, gff3_iter
 import json
-from seq_annot.seqio import open_input
+from seq_annot.seqio import open_io
 import sys
 import textwrap
 from time import time
@@ -81,7 +81,8 @@ def main():
         action=ParseSeparator,
         sep=',',
         help="input one or more relational databases in JSON format containing "
-        "attribute fields")
+        "attribute fields. Multiple input files can be provided by separating "
+        "them with a comma and no spaces")
     parser.add_argument('-o', '--out',
         metavar='out.gff',
         action=Open,
@@ -174,7 +175,7 @@ def main():
 
         # Load mapping information
         for map_file in args.map_files:
-            json_map = json.load(open_input(map_file))
+            json_map = json.load(open_io(map_file))
             mapping = {**json_map, **mapping}
 
         # Initiate statistics variables
@@ -189,7 +190,7 @@ def main():
     hits = {}  #store matches and additional attributes
     for b6 in args.b6:
 
-        with open_input(b6) as b6_h:
+        with open_io(b6) as b6_h:
             for hit in b6_iter(b6_h, header=specifiers):
 
                 aln_totals += 1
@@ -335,14 +336,14 @@ def main():
               file=sys.stderr)
     print("  - with annotation:\t{!s}".format(annot_totals), \
           file=sys.stderr)
-    print("\n")
+    print("")
 
     # Calculate and print program run-time
     end_time = time()
     total_time = (end_time - start_time) / 60.0
     print("It took {:.2e} minutes to annotate {!s} features"\
           .format(total_time, gff_totals), file=sys.stderr)
-    print("\n")
+    print("")
 
 
 if __name__ == "__main__":
