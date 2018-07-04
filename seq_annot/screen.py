@@ -51,7 +51,7 @@ __author__ = "Christopher Thornton"
 __license__ = 'GPLv3'
 __maintainer__ = 'Christopher Thornton'
 __status__ = "Alpha"
-__version__ = "0.3.5"
+__version__ = "0.4.0"
 
 
 def screen_aln_quality(hit, evalue=10, identity=0, length=0, score=0):
@@ -180,6 +180,12 @@ def main():
         default=sys.stdout,
         help="output screened alignments in B6/M8 format [default: output to "
               "stdout]")
+    parser.add_argument('-d', '--discards',
+        dest='discards',
+        metavar='out.csv',
+        action=Open,
+        mode='wb',
+        help="output discards to file")
     parser.add_argument('-s', '--specifiers',
         dest="format",
         action=ParseSeparator,
@@ -243,11 +249,6 @@ def main():
         dest='default_format',
         action='store_true',
         help="only output default BLAST+ specifiers [default: output all]")
-    output_control.add_argument('-d', '--discarded',
-        metavar='out.b6',
-        action=Open,
-        mode='wb',
-        help="output discarded hits to file")
     parser.add_argument('--version',
         action='version',
         version='%(prog)s ' + __version__)
@@ -279,12 +280,15 @@ def main():
 
     # Assign variables based on user inputs
     out_h = args.out.write
-    out_d = args.discarded.write if args.discarded else do_nothing
+    if args.discards:
+        out_d = args.discards.write
+        out_d("#Discarded\tReason\n".encode('utf-8'))
+    else:
+        out_d = do_nothing
 
     mapping = json.load(args.map_file) if args.map_file else None
 
     specifiers = args.format
-    bh = args.best
     score_field = args.score_field
     snp_field = args.snp_field
     e_thresh = args.evalue
@@ -301,31 +305,8 @@ def main():
     aln_totals = 0  #all alignments in B6 file
 
     prev_hit = ''
-    for hit in b6_iter(args.b6, header=specifiers):
+    for hit in b6_iter(args.b6, header=specifiers, bh=args.best):
         aln_totals += 1
-
-        if bh:
-            # Determine best-hit when multiple queries found
-            if prev_hit and hit.query == prev_hit.query:
-                failed_bh += 1
-
-                # Take hit with highest bit-score
-                if hit.bit_score > prev_hit.bit_score:
-                    discarded = prev_hit
-                elif hit.bit_score == prev_hit.bit_score:
-                    # Take hit with largest e-value when bit-scores equal
-                    if hit.evalue >= prev_hit.evalue:
-                        discarded = prev_hit
-                    else:
-                        discarded = hit
-                else:
-                    discarded = hit
-
-                # Write discarded hit to discards file if requested
-                out_d(discarded.write(defaults=default_only).encode('utf-8'))
-                continue
-            else:
-                prev_hit = hit
 
         subject = hit.subject
 
@@ -349,7 +330,7 @@ def main():
                     score = float(score)
                 except ValueError:  #no value in field
                     print("warning: no value for {} in field {}. Setting "
-                          "scoring threshold to 0.".format(score_field, \
+                          "scoring threshold to 0\n".format(score_field, \
                           subject, hit.query), file=sys.stderr)
                     score = 0
 
@@ -376,7 +357,7 @@ def main():
                     out_h(hit.write(defaults=default_only).encode('utf-8'))
                 else:
                     failed_snp += 1
-                    out_d(hit.write(defaults=default_only).encode('utf-8'))
+                    out_d("{}\tSNP screen\n".format(hit.query).encode('utf-8'))
 
             else:
                 passed_total += 1
@@ -384,7 +365,7 @@ def main():
 
         else:
             failed_qual += 1
-            out_d(hit.write(defaults=default_only).encode('utf-8'))
+            out_d("{}\talignment quality\n".format(hit.query).encode('utf-8'))
 
     # Output screening statistics
     print("Alignments processed:", file=sys.stderr)
@@ -398,9 +379,6 @@ def main():
               file=sys.stderr)
     if snp_field:
         print("    - due to secondary SNP screening:\t{!s}".format(failed_snp), \
-              file=sys.stderr)
-    if bh:
-        print("    - due to best hit filtering:\t{!s}".format(failed_bh), \
               file=sys.stderr)
     print("", file=sys.stderr)
  
