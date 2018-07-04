@@ -234,14 +234,14 @@ def main():
     print("  - successfully merged:\t{!s}".format(p_totals), file=sys.stderr)
     print("  - discarded due to overlapping feature:\t{!s}".format(o_totals), \
           file=sys.stderr)
-    print("")
+    print("", file=sys.stderr)
 
     # Calculate and print program run-time
     end_time = time()
     total_time = (end_time - start_time) / 60.0
     print("It took {:.2e} minutes to combine {!s} features"\
           .format(total_time, gff_totals), file=sys.stderr)
-    print("")
+    print("", file=sys.stderr)
 
 
 if __name__ == "__main__":

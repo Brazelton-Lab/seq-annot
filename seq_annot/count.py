@@ -52,7 +52,7 @@ __author__ = 'Christopher Thornton'
 __license__ = 'GPLv3'
 __maintainer__ = 'Christopher Thornton'
 __status__ = "Beta"
-__version__ = '1.5.0'
+__version__ = '1.5.1'
 
 
 class UnknownChrom(Exception):
@@ -348,7 +348,7 @@ def main():
 
         outfile = "{}.{}.csv{}".format(args.outpref, unit, compression)
         try:
-            out_h = open_io(outfile, mode='wb').write
+            out_h = open_io(outfile, mode='wb')
         except AttributeError:
             print("error: unable to write to '{}'".format(outfile), \
                   file=sys.stderr)
@@ -694,7 +694,7 @@ def main():
         # Output abundances sorted by key name
         for fn in sorted(abundances):
             if not fn.startswith("unkwn_"):
-                out_h("{}\t{!s}\n".format(fn, abundances[fn]).encode('utf-8'))
+                out_h.write("{}\t{!s}\n".format(fn, abundances[fn]).encode('utf-8'))
 
         out_h.close()
 
@@ -732,14 +732,14 @@ def main():
     print("    - duplicate\t{!s}".format(duplicate), file=sys.stderr)
     print("    - alignment not unique\t{!s}".format(nonunique), \
           file=sys.stderr)
-    print("")
+    print("", file=sys.stderr)
 
     # Calculate and print program run-time
     end_time = time()
     total_time = (end_time - start_time) / 60.0
     print("It took {:.2e} minutes to count {!s} fragments for {!s} features"\
           .format(total_time, r_totals, f_totals), file=sys.stderr)
-    print("")
+    print("", file=sys.stderr)
 
 
 if __name__ == "__main__":

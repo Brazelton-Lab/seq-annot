@@ -336,14 +336,14 @@ def main():
               file=sys.stderr)
     print("  - with annotation:\t{!s}".format(annot_totals), \
           file=sys.stderr)
-    print("")
+    print("", file=sys.stderr)
 
     # Calculate and print program run-time
     end_time = time()
     total_time = (end_time - start_time) / 60.0
     print("It took {:.2e} minutes to annotate {!s} features"\
           .format(total_time, gff_totals), file=sys.stderr)
-    print("")
+    print("", file=sys.stderr)
 
 
 if __name__ == "__main__":
