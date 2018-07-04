@@ -51,7 +51,7 @@ __author__ = "Christopher Thornton"
 __license__ = 'GPLv3'
 __maintainer__ = 'Christopher Thornton'
 __status__ = "Alpha"
-__version__ = "0.3.4"
+__version__ = "0.3.5"
 
 
 def screen_aln_quality(hit, evalue=10, identity=0, length=0, score=0):
@@ -231,8 +231,8 @@ def main():
              "will be performed after alignment quality screening")
     screen_method.add_argument('--best',
         action='store_true',
-        help="discard all but the best hit. Assumes that multiple hits are "
-             "ordered from best-hit to worst")
+        help="discard all but the best hit. Requires that the input B6 file "
+             "be sorted by query name")
     output_control = parser.add_argument_group(title="output control options")
     output_control.add_argument('--snp',
         dest='only_snp',
@@ -299,19 +299,33 @@ def main():
     failed_snp = 0  #hits failed due to SNP screening
     failed_bh = 0  #hits failed due to best-hit criteria
     aln_totals = 0  #all alignments in B6 file
-    queries = []
+
+    prev_hit = ''
     for hit in b6_iter(args.b6, header=specifiers):
         aln_totals += 1
 
         if bh:
-            query = hit.query
-            if query in queries:
-
+            # Determine best-hit when multiple queries found
+            if prev_hit and hit.query == prev_hit.query:
                 failed_bh += 1
-                out_d(hit.write(defaults=default_only).encode('utf-8'))
+
+                # Take hit with highest bit-score
+                if hit.bit_score > prev_hit.bit_score:
+                    discarded = prev_hit
+                elif hit.bit_score == prev_hit.bit_score:
+                    # Take hit with largest e-value when bit-scores equal
+                    if hit.evalue >= prev_hit.evalue:
+                        discarded = prev_hit
+                    else:
+                        discarded = hit
+                else:
+                    discarded = hit
+
+                # Write discarded hit to discards file if requested
+                out_d(discarded.write(defaults=default_only).encode('utf-8'))
                 continue
             else:
-                queries.append(query)
+                prev_hit = hit
 
         subject = hit.subject
 
@@ -388,14 +402,14 @@ def main():
     if bh:
         print("    - due to best hit filtering:\t{!s}".format(failed_bh), \
               file=sys.stderr)
-    print("")
+    print("", file=sys.stderr)
  
     # Calculate and print program run-time
     end_time = time()
     total_time = (end_time - start_time) / 60.0
     print("It took {:.2e} minutes to screen {!s} alignments"\
           .format(total_time, aln_totals), file=sys.stderr)
-    print("")
+    print("", file=sys.stderr)
 
 
 if __name__ == "__main__":
