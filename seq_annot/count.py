@@ -1,23 +1,22 @@
 #!/usr/bin/env python
 """
-Calculate genomic feature abundances.
+Estimate the abundances of genomic features.
 
 Required inputs are a GFF3 file of annotated features and an alignments file 
-in SAM or BAM format. Optional input is a relational database containing 
-features mapped to feature categories, such as genes to gene families. 
-Abundances will be calculated for feature categories in place of features if 
-the appropriate arguments are supplied. Output is a tabular file of estimated 
-feature abundances.
+in SAM or BAM format. Optional input is one or more relational databases 
+containing features mapped to feature categories, such as genes to gene
+families. Abundances will be calculated for feature categories in place of 
+features if the appropriate arguments are supplied. Output is a tabular file 
+of estimated feature abundances.
 
 The compression algorithm is automatically detected for input files based on 
-the file extension. To compress output, add the appropriate file extension 
-to the output file name (e.g. .gz, .bz2). The alignments file will be taken 
-from standard input (stdin) if '-' is supplied in place of a file name.
-Similarly, leaving off '--out' will direct output to standard output (stdout).
+the file extension. To compress output, provide the appropriate flag based on 
+the desired compression algorithm. The alignments file will be taken from 
+standard input (stdin) if '-' is supplied in place of a file name.
 
 Copyright:
 
-    count_features Counts coverage of GFF file from SAM/BAM file
+    count_features Counts coverage of GFF entries from a SAM/BAM file
     Copyright (C) 2018  William Brazelton
 
     This program is free software: you can redistribute it and/or modify
@@ -43,7 +42,7 @@ import HTSeq
 import itertools
 import json
 import os
-from seq_annot.seqio import open_input
+from seq_annot.seqio import open_io
 from statistics import mean
 import sys
 import textwrap
@@ -53,7 +52,7 @@ __author__ = 'Christopher Thornton'
 __license__ = 'GPLv3'
 __maintainer__ = 'Christopher Thornton'
 __status__ = "Beta"
-__version__ = '1.4.9'
+__version__ = '1.5.0'
 
 
 class UnknownChrom(Exception):
@@ -174,17 +173,21 @@ def main():
         dest='map_files',
         action=ParseSeparator,
         sep=',',
-        help="input relational database in JSON format containing features "
-             "mapped to feature categories, such as genes to gene families "
-             "or exons to genes. Abundance estimates for feature categories "
-             "will be reported instead of for features")
-    parser.add_argument('-o', '--out',
-        metavar='out.csv',
-        action=Open,
-        mode='wb',
-        default=sys.stdout,
-        help="output tabular file of feature abundances [default: output "
-             "to stdout]")
+        help="input one or more relational databases, in JSON format, "
+             "containing features mapped to feature categories, such as genes "
+             "to gene families or exons to genes. Abundance estimates for the "
+             "given feature category will be reported in place of features. "
+             "Multiple input files can be provided by separating them with a "
+             "comma and no spaces")
+    parser.add_argument('-o', '--outpref',
+        type=str,
+        metavar='PREFIX',
+        dest='outpref',
+        default='sample',
+        help="prefix for the output tabular files containing feature abundance "
+             "estimates [default: sample]. File names will be appended with "
+             "the units, file format, and compression algorithm, if relevant "
+             "[e.g. sample.counts.csv.gz]")
     parser.add_argument('-f', '--format', 
         metavar='FORMAT', 
         dest='aformat',
@@ -215,9 +218,9 @@ def main():
     parser.add_argument('-a', '--attr',
         metavar='ATTRIBUTE',
         default="Name",
-        help="GFF attribute to use as the ID for the calculated abundance "
-             "[default: 'Name']. The value will also be used as the search "
-             "ID for the relational database, if provided")
+        help="GFF attribute to use as the ID for the calculated abundances "
+             "[default: 'Name']. This value will also be used as the search "
+             "ID in the relational database, if provided")
     parser.add_argument('-e', '--mode', 
         metavar='MODE',
         choices=["union", "intersection-strict", "intersection-nonempty"],
@@ -232,25 +235,26 @@ def main():
     parser.add_argument('-u', '--units', 
         metavar='UNITS',
         dest='norm',
-        choices=['counts', 'fpk', 'fpkm', 'tpm', 'custom'], 
+        action=ParseSeparator,
+        sep=',',
         default='counts',
-        help="output abundance estimates in these units [default: counts]. "
-             "Options are 'counts', 'fpk' (fragments per kilobase of feature), "
-             "'fpkm' (fragements per kilobase of feature per million mapped "
-             "fragments), 'tpm' (transcripts/fragments per million), and "
-             "'custom'. If other than 'counts', features will be "
-             "normalized by recruitment length, which will be calculated from "
-             "the start and end fields of the GFF3 file. This is the sole "
-             "normalization method used when transforming counts to FPK, and "
-             "is useful to correct for differences in feature lengths within "
-             "a sample. In addition to feature length, FPKM and TPM attempt "
-             "to account for differences between samples in sequencing "
-             "effort. An advantage of TMP over FPKM is that TPM is a "
-             "proportional measurement, making it easier to identify the "
-             "extent that the relative 'importance' of a given feature "
-             "changes between samples. A custom transformation can also be "
-             "performed when used with the -k/--coeff argument, in which "
-             "case the length normalized proportion of a feature will be "
+        help="comma-separated list of units to output abundance estimates in "
+             "[default: counts]. Options are 'counts', 'fpk' (fragments per "
+             "kilobase of feature), 'fpkm' (fragements per kilobase of "
+             "feature per million mapped fragments), 'tpm' "
+             "(transcripts/fragments per million), 'prop', and 'custom'. If "
+             "other than 'counts', features will be normalized by recruitment "
+             "length, which will be calculated from the start and end fields "
+             "of the GFF3 file. This is the sole normalization method used "
+             "when transforming counts to FPK, and is useful to correct for "
+             "differences in feature lengths within a sample. In addition to "
+             "feature length, FPKM and TPM attempt to account for differences "
+             "between samples in sequencing effort. An advantage of TMP over "
+             "FPKM is that TPM is a proportional measurement, making it "
+             "easier to identify the extent that the relative 'importance' of "
+             "a given feature changes between samples. A custom transformation "
+             "can also be performed when used with the -k/--coeff argument, in "
+             "which case the length normalized proportion of a feature will be "
              "multiplied by the provided scaling factor.")
     parser.add_argument('-k', '--coeff',
         metavar='MUL',
@@ -289,6 +293,19 @@ def main():
     parser.add_argument('--nonunique',
         action='store_true',
         help="allow reads to align with more than one feature")
+    compression = parser.add_mutually_exclusive_group()
+    compression.add_argument('--gzip',
+        dest='gzipped',
+        action='store_true',
+        help="compress output using the gzip algorithm")
+    compression.add_argument('--bzip2',
+        dest='bzipped',
+        action='store_true',
+        help="compress output using the bzip2 algorithm")
+    compression.add_argument('--lzma',
+        dest='lzma',
+        action='store_true',
+        help="compress output using the lzma algorithm")
     parser.add_argument('--version',
         action='version',
         version='%(prog)s ' + __version__)
@@ -310,7 +327,39 @@ def main():
     start_time = time()
 
     # Assign variables based on user inputs
-    out_h = args.out.write
+    if args.gzipped:
+        compression = '.gz'
+    elif args.bzipped:
+        compression = '.bz2'
+    elif args.lzma:
+        compression = '.xz'
+    else:
+        compression = ''
+
+    allowed_units = ["counts", "tpm", "custom", "prop", "fpk", "fpkm"]
+
+    out_handles = {}
+    for unit in args.norm:
+        if unit not in allowed_units:
+            print("warning: unknown metric of abundance '{}' provided to "
+                  "-u/--unit. Please see the help message for a list of the "
+                  "allowed units".format(unit), file=sys.stderr)
+            continue
+
+        outfile = "{}.{}.csv{}".format(args.outpref, unit, compression)
+        try:
+            out_h = open_io(outfile, mode='wb').write
+        except AttributeError:
+            print("error: unable to write to '{}'".format(outfile), \
+                  file=sys.stderr)
+            sys.exit(1)
+
+        out_handles[unit] = out_h
+
+    if not out_handles:
+        print("error: no output files can be created. Please re-run with one "
+              "or more of the accepted units of abundance", file=sys.stderr)
+        sys.exit(1)
 
     overlap_mode = args.mode
     minaqual = args.minqual
@@ -331,7 +380,7 @@ def main():
     if args.map_files:
         mapping = {}
         for map_file in args.map_files:
-            json_map = json.load(open_input(map_file))
+            json_map = json.load(open_io(map_file))
             mapping = {**json_map, **mapping}
     else:
         mapping = None
@@ -370,7 +419,7 @@ def main():
             features[f.iv] += feature_id  #for mapping alignments
             counts[feature_id] = {'count': 0, 'length': feature_length}
     except:
-        print("error: problem occured when processing GFF3 file at line ({})"
+        print("error: problem occured when processing GFF3 file at line {}"
               .format(gff.get_line_number_string()), file=sys.stderr)
         sys.exit(1)
 
@@ -463,15 +512,24 @@ def main():
                 notaligned += 1
                 continue
 
-            if first_r.aligned and second_r.aligned:
-                iv_seq = tuple()
-                for aln_pair in r:
-                    iv_seq = itertools.chain(iv_seq, (co.ref_iv for co in \
-                             aln_pair.cigar if co.type in match_types and \
-                             co.size > 0))
-            else:
+            if first_r is None or second_r is None:
                 notaligned += 1
                 continue
+
+            if first_r is not None and first_r.aligned:
+                iv_seq = (co.ref_iv for co in first_r.cigar if co.type in \
+                          match_types and co.size > 0)
+            else:
+                iv_seq = tuple()
+
+            if second_r is not None and second_r.aligned:
+                iv_seq = itertools.chain(iv_seq, (co.ref_iv for co in \
+                         second_r.cigar if co.type in match_types and \
+                         co.size > 0))
+            else:
+                if (first_r is None) or not (first_r.aligned):
+                    notaligned += 1
+                    continue
 
             # Check whether either read aligned more than once
             try:
@@ -547,76 +605,98 @@ def main():
                       duplicate
     nmapped = aln_totals + empty + ambiguous + nonunique + lowqual
 
-    # Set scaling function
-    if args.norm == 'fpk':
-        norm_method = scale_abundance_fpk
-        scaling_factor = None
-    elif args.norm == 'fpkm':
-        norm_method = scale_abundance_fpkm
-        # Scaling factor is all mapped reads
-        scaling_factor = nmapped
-    elif args.norm == 'tpm':
-        norm_method = scale_abundance_tpm
-        rates = [counts[j]['count'] / counts[j]['length'] for j in counts]
-        print(sum(rates), file=sys.stderr)
-        # Scaling factor is sum of all reads per base rates
-        scaling_factor = sum(rates)
-    elif args.norm == 'custom':
-        norm_method = scale_abundance_prop
-        rates = [counts[j]['count'] / counts[j]['length'] for j in counts]
-        scaling_factor = args.sfactor / sum(rates)
-    else:  #default is counts
-        norm_method = scale_abundance_none
-        scaling_factor = None
+    for unit in args.norm:
+        # Set scaling function
+        if unit == 'fpk':
+            norm_method = scale_abundance_fpk
+            scaling_factor = None
+        elif unit == 'fpkm':
+            norm_method = scale_abundance_fpkm
+            # Scaling factor is all mapped reads
+            scaling_factor = nmapped
+        elif unit == 'tpm':
+            norm_method = scale_abundance_tpm
+            rates = [counts[j]['count'] / counts[j]['length'] for j in counts]
+            # Scaling factor is sum of all reads per base rates
+            scaling_factor = sum(rates)
+        elif unit == 'custom':
+            norm_method = scale_abundance_prop
+            rates = [counts[j]['count'] / counts[j]['length'] for j in counts]
+            scaling_factor = args.sfactor / sum(rates)
+        elif unit == 'prop':
+            norm_method = scale_abundance_prop
+            rates = [counts[j]['count'] / counts[j]['length'] for j in counts]
+            scaling_factor = 1 / sum(rates)
+        else:  #default is counts
+            norm_method = scale_abundance_none
+            scaling_factor = None
 
-    if are_transcripts and not pe_mode:
-        print("warning: unable to calculate effective length from single-end "
-              "reads. Will use sequence length instead.\n", file=sys.stderr)
-        calc_length = return_first_arg
-    elif are_transcripts and pe_mode:
-        calc_length = calculate_effective_length
-    else:
-        calc_length = return_first_arg
+        if are_transcripts and not pe_mode:
+            print("warning: unable to calculate effective length from single-end "
+                  "reads. Will use sequence length instead.\n", file=sys.stderr)
+            calc_length = return_first_arg
+        elif are_transcripts and pe_mode:
+            calc_length = calculate_effective_length
+        else:
+            calc_length = return_first_arg
 
-    # Abundance normalization
-    abundances = {}
-    unkwn_feat = 0
-    no_map = 0
-    for feature in counts:
+        out_h = out_handles[unit] 
 
-        fcount = counts[feature]['count']
-        flen = calc_length(counts[feature]['length'], fld)
+        # Abundance normalization
+        abundances = {}
+        unkwn_feat = 0
+        no_map = 0
+        for feature in counts:
 
-        feature_abundance = norm_method(fcount, flen, scaling_factor)
+            fcount = counts[feature]['count']
+            flen = calc_length(counts[feature]['length'], fld)
 
-        # Map to higher order features, if applicable
-        if category_field:
-            try:
-                feature_map = mapping[feature]
-            except KeyError:
-                no_map += 1
-                if not category_only:
-                    # Keep all features, even the uncategorized ones
-                    abundances[feature] = abundances.get(feature, 0) + \
-                                          feature_abundance
-                continue
-            else:
+            feature_abundance = norm_method(fcount, flen, scaling_factor)
+
+            # Map to higher order features, if applicable
+            if category_field:
                 try:
-                    category = feature_map[category_field]
+                    # Ensure that feature has corresponding entry in database
+                    feature_map = mapping[feature]
                 except KeyError:
-                    unkwn_feat += 1
+                    no_map += 1
                     if not category_only:
+                        # Keep all features, even the uncategorized ones
                         abundances[feature] = abundances.get(feature, 0) + \
                                               feature_abundance
                     continue
+                else:
+                    try:
+                        # Ensure that entry has relevant category field
+                        category = feature_map[category_field]
+                    except KeyError:
+                        unkwn_feat += 1
+                        if not category_only:
+                            abundances[feature] = abundances.get(feature, 0) + \
+                                                  feature_abundance
+                        continue
 
-            # Handle if feature has more than one category
-            for category in category.split(','):
-                abundances[category.lstrip()] = abundances.get(category, 0) + \
-                                                feature_abundance
+                # Handle case where feature has more than one category, such 
+                # as if a protein sequence is assigned to more than one gene 
+                # family
+                for category in category.split(','):
+                    abundances[category.lstrip()] = \
+                        abundances.get(category, 0) + feature_abundance
 
-        else:
-            abundances[feature] = abundances.get(feature, 0) + feature_abundance
+            else:
+                abundances[feature] = abundances.get(feature, 0) + \
+                                      feature_abundance
+
+        # "UNMAPPED" can be interpreted as a single unknown gene of length one
+        # kilobase recruiting all reads that failed to map to input features
+        #abundances['UNMAPPED'] = unaln_totals
+
+        # Output abundances sorted by key name
+        for fn in sorted(abundances):
+            if not fn.startswith("unkwn_"):
+                out_h("{}\t{!s}\n".format(fn, abundances[fn]).encode('utf-8'))
+
+        out_h.close()
 
     if unkwn_feat > 0:
         print("warning: found '{!s}' features without the '{}' field in the "
@@ -626,15 +706,6 @@ def main():
     if no_map > 0:
         print("warning: found {!s} features without an entry in the "
               "relational database.\n".format(no_map), file=sys.stderr)
-
-    # "UNMAPPED" can be interpreted as a single unknown gene of length one
-    # kilobase recruiting all reads that failed to map to input features
-    #abundances['UNMAPPED'] = unaln_totals
-
-    # Output abundances
-    for fn in sorted(abundances):
-        if not fn.startswith("unkwn_"):
-            out_h("{}\t{!s}\n".format(fn, abundances[fn]).encode('utf-8'))
 
     # Output statistics
     print("Features processed:", file=sys.stderr)

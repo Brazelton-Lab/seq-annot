@@ -8,8 +8,8 @@ from lzma import LZMAFile
 import io
 import sys
 
-def open_input(infile):
-    """Open input files based on file extension
+def open_io(infile, mode='rb'):
+    """Open input files based on file extension for reading or writing
     """
 
     algo = io.open  # Default to plaintext
@@ -27,6 +27,6 @@ def open_input(infile):
     except KeyError:
         pass
 
-    handle = algo(infile)
+    handle = algo(infile, mode=mode)
 
     return handle
