@@ -52,7 +52,7 @@ __author__ = 'Christopher Thornton'
 __license__ = 'GPLv3'
 __maintainer__ = 'Christopher Thornton'
 __status__ = "Beta"
-__version__ = '1.5.1'
+__version__ = '1.5.2'
 
 
 class UnknownChrom(Exception):
@@ -713,6 +713,7 @@ def main():
     if feature_type:
         print("  - of relevant type:\t{!s}".format(ftype_totals), \
               file=sys.stderr)
+    print("  - unique features:\t{!s}".format(len(counts)), file=sys.stderr)
     print("Reads processed:", file=sys.stderr)
     print("  - read totals:\t{!s}".format(r_totals), file=sys.stderr)
     print("  - successfully mapped:\t{!s}".format(aln_totals), \
