@@ -137,7 +137,9 @@ def main():
         dest='clear_attrs',
         action='store_true',
         help="overwrite existing attributes [default: append new attributes "
-             "to the end of existing attributes]")
+             "to the end of existing attributes]. This does not remove "
+             "attributes with predefined meaning according to the GFF3 "
+             "specifications")
     parser.add_argument('--version',
         action='version',
         version='%(prog)s ' + __version__)
@@ -157,6 +159,18 @@ def main():
 
     # Track program run-time
     start_time = time()
+
+    # URL escape character translation for predefined attribute characters
+    url_escape = {ord('='): '%3D', 
+                  ord(','): '%2C', 
+                  ord(';'): '%3B', 
+                  ord('\t'): '%09'
+                 }
+
+    predef_tags = ['ID', 'Parent', 'Name', 'Alias', 'Target', 'Gap', \
+                   'Derives_from', 'Note', 'Dbxref', 'Ontology_term', \
+                   'Is_circular'\
+                  ]
 
     # Assign variables based on user inputs
     out_h = args.out.write
@@ -226,7 +240,9 @@ def main():
     annot_totals = 0  #all features with annotation
     ftype_totals = 0  #features with type matching argument input
     no_map = 0  #track hits without an entry in the relational database
+
     prev_name = None
+    id_lookup = {}  #track IDs for parent-child reference
     for entry in gff3_iter(args.gff, parse_attr=True, headers=True):
         try:
             seq_id = entry.seqid
@@ -240,13 +256,13 @@ def main():
         gff_totals += 1
 
         try:
-            feature_id = entry.attributes['ID'].split('_')[-1]  #id is second value
+            feature_id = entry.attributes['ID'].split('_')[-1]  #id is second
         except TypeError:
             print("error: unable to find the ID attribute in line {}"\
                   .format(entry.origline), file=sys.stderr)
             sys.exit(1)
 
-        # Keep track of output ID attribute components
+        # Track number features on a given chromosome for updating the ID attr
         if seq_id == prev_name:
             seq_count += 1
         else:
@@ -254,8 +270,25 @@ def main():
             prev_name = seq_id
 
         # Provide new ID for the feature
-        unique_id = "{}_{!s}".format(seq_id, seq_count)
-        entry.attributes['ID'] = unique_id
+        new_id = "{}_{!s}".format(seq_id, seq_count)
+        old_id = entry.attributes['ID']
+        entry.attributes['ID'] = new_id
+
+        # Store old ID for parent-child reference
+        id_lookup[old_id] = new_id
+
+        # Update Parent attribute if feature is a child
+        if 'Parent' in entry.attributes:
+            try:
+                pid = id_lookup[entry.attributes['Parent']]
+            except KeyError:
+                print("error: formatting error in GFF3 file '{}'. Parent "
+                      "features must come before child features in the "
+                      "input GFF3 files".format(file_order[item[0]]), \
+                      file=sys.stderr)
+                sys.exit(1)
+
+            entry.attributes['Parent'] = pid
 
         # Annotate features of a given type only
         if feature_type:
@@ -268,8 +301,9 @@ def main():
 
         # clear existing attributes if directed
         if args.clear_attrs:
-            entry.attributes.clear()
-            entry.attributes['ID'] = unique_id
+            for attr in entry.attributes:
+                if attr not in predef_tags:
+                    del(entry.attributes[attr])
 
         # Annotate features using attributes field
         try:
@@ -295,12 +329,13 @@ def main():
                     # Only include information from the requested fields
                     for field in map_fields:
                         try:
-                            entry_value = sub_entry[field]
+                            entry_value = sub_entry[field].lstrip()
                         except KeyError:
                             no_fields[field] += 1
                         else:
                             if entry_value:  #entry field might be blank
-                                entry_value = entry_value.lstrip().replace(';', ',')
+                                # Escape predifined characters
+                                entry_value = entry_value.translate(url_escape)
                                 attrs.append((field, entry_value))
 
             for attr in attrs:
