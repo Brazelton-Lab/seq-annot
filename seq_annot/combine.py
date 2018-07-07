@@ -69,20 +69,19 @@ def main():
         default=sys.stdout,
         help="output combined features in GFF3 format [default: output to "
              "stdout]")
-    parser.add_argument('-p', '--precedence',
-        choices=['order', 'none'],
-        default='none',
-        help="method to resolve overlapping features [default: none]. "
-             "Options are 'order' and 'none'. If 'order', precedence will "
-             "be determined by input file order")
+    parser.add_argument('--precedence',
+        dest='precedence',
+        action='store_true',
+        help="resolve feature overlap using input file order to determine "
+             "feature precedence")
     parser.add_argument('--preserve',
         dest='preserve_within',
         action='store_true',
         help="preserve features if they overlap within a GFF file")
     parser.add_argument('--stranded',
-        dest='allow_diff_strand',
+        dest='stranded',
         action='store_true',
-        help="preserve features if they overlap but only on different strands")
+        help="preserve features if they overlap, but only on different strands")
     parser.add_argument('-d', '--discarded',
         metavar='out.gff',
         action=Open,
@@ -109,33 +108,34 @@ def main():
     out_d = args.discarded.write if args.discarded else do_nothing
 
     overlap_precedence = args.precedence
+    allow_diff_strands = args.stranded
 
     gff_totals = 0
     o_totals = 0
     p_totals = 0
-
-    uniques = {}  #store unique features
-    chroms = {}  #store location of feature
     ind_totals = {}  #store individual GFF3 feature totals
 
+    uniques = {}  #store unique features
+    file_order = {}
     # Output unique features
     for position, gff in enumerate(args.gffs):
         gff_base = os.path.basename(gff)
         ind_totals[gff_base] = 0
+        file_order[position] = gff_base
 
         with open_io(gff) as gff_h:
             for feature in gff3_iter(gff_h):
 
                 try:
-                    seq_id = feature.seqid
+                    chrom_id = feature.seqid
                 except AttributeError:
                     if feature.startswith('##'):  #headers
                         continue
                     elif feature.startswith('#'):
                         continue  #comments
                     else:
-                        print("error: GFF3 file does not seem to be formatted "
-                              "correctly", file=sys.stderr)
+                        print("error: unable to parse GFF3 file. The file may "
+                              "be formatted incorrectly", file=sys.stderr)
                         sys.exit(1)
 
                 gff_totals += 1
@@ -143,23 +143,15 @@ def main():
 
                 ident = feature.attributes["ID"]
 
-                if "Parent" in feature.attributes:
-                    parent_id = feature.attributes["Parent"]
-                    try:
-
-                        parent.add_child(feature)
-                        continue
-                    except AttributeError:
-                        
-                
                 try:
-                    chrom = uniques[seq_id]
+                    chrom = uniques[chrom_id]
                 except KeyError:
+                    # First feature encountered at given position always unique
                     p_totals += 1
-                    uniques[seq_id] = [(position, feature)]
+                    uniques[chrom_id] = [(position, feature)]
                     continue
 
-                if overlap_precedence == "order":
+                if overlap_precedence:
                     is_unique = True  #assume feature is unique
 
                     start = feature.start
@@ -176,9 +168,10 @@ def main():
                             continue
 
                         # Allow features to overlap on different strands
-                        if args.allow_diff_strands and \
-                            ((strand == '+' and chrom_feat.strand == '-') or \
-                            (strand == '-' and chrom_feat.strand == '+')):
+                        chrom_strand = chrom_feat.strand
+                        if allow_diff_strands and ((strand == '.') or \
+                            (strand == '+' and chrom_strand in ['-', '.']) or \
+                            (strand == '-' and chrom_strand in ['+', '.'])):
                             continue
 
                         iv_1 = set(range(chrom_feat.start, chrom_feat.end + 1))
@@ -192,17 +185,18 @@ def main():
                         # Feature does not fall within the interval of another, so 
                         # add to uniques
                         p_totals += 1
-                        uniques[seq_id].append((position, feature))
+                        uniques[chrom_id].append((position, feature))
                     else:
                         out_d(feature.write().encode('utf-8'))
                 else:
                     p_totals += 1
-                    uniques[seq_id].append((position, feature))
+                    uniques[chrom_id].append((position, feature))
 
     # Output combined GFF3
     header = "##gff-version 3\n"
     out_h(header.encode('utf-8'))
 
+    id_lookup = {}
     for chrom in sorted(uniques):
         chrom_feature = 0
         for item in uniques[chrom]:
@@ -212,18 +206,29 @@ def main():
             # Update ID attribute to ensure uniqueness
             old_ident = entry.attributes['ID']
             new_ident = '{}_{!s}'.format(entry.seqid, chrom_feature)
-
             entry.attributes['ID'] = new_ident
+
+            # Store old ID for parent-child reference
+            id_lookup[old_ident] = new_ident
+
+            # Update Parent attribute if feature is child
+            if 'Parent' in entry.attributes:
+                old_pids = entry.attributes['Parent'].split(',')
+                new_pids = []
+                for old_pid in old_pids:
+                    try:
+                        new_pid = id_lookup[old_pid]
+                    except KeyError:
+                        print("error: formatting error in GFF3 file '{}'. "
+                              "Parent features must come before child features "
+                              "in the input GFF3 files"\
+                              .format(file_order[item[0]]), file=sys.stderr)
+                        sys.exit(1)
+                    new_pids.append(new_pid)
+
+                entry.attributes['Parent'] = ','.join(new_pids)
+
             out_h(entry.write().encode('utf-8'))
-
-            if entry.children:
-                for child in entry.children:
-                    chrom_feature += 1
-                    entry.attributes['ID'] = '{}_{!s}'.format(child.seqid, chrom_feature)
-
-                    # Update Parent attribute with new parent ID
-                    child.attributes['Parent'] = new_ident
-                    out_h(child.write().encode('utf-8'))
 
     # Calculate and print statistics
     print("Features processed:", file=sys.stderr)
@@ -232,8 +237,9 @@ def main():
         print("    - features in {}:\t{!s}".format(gff, ind_totals[gff]), \
               file=sys.stderr)
     print("  - successfully merged:\t{!s}".format(p_totals), file=sys.stderr)
-    print("  - discarded due to overlapping feature:\t{!s}".format(o_totals), \
-          file=sys.stderr)
+    if args.precedence:
+        print("  - discarded due to overlapping features:\t{!s}"\
+              .format(o_totals), file=sys.stderr)
     print("", file=sys.stderr)
 
     # Calculate and print program run-time

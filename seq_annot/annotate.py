@@ -49,7 +49,7 @@ __author__ = "Christopher Thornton"
 __license__ = 'GPLv3'
 __maintainer__ = 'Christopher Thornton'
 __status__ = "Alpha"
-__version__ = "0.2.3"
+__version__ = "0.3.0"
 
 
 def do_nothing(*args):
@@ -137,9 +137,10 @@ def main():
         dest='clear_attrs',
         action='store_true',
         help="overwrite existing attributes [default: append new attributes "
-             "to the end of existing attributes]. This does not remove "
-             "attributes with predefined meaning according to the GFF3 "
-             "specifications")
+             "to the end of existing attributes]. Attributes with predefined "
+             "meaning according to the GFF3 specifications or reserved "
+             "attributes (those that begin with an uppercase character) are "
+             "exempt")
     parser.add_argument('--version',
         action='version',
         version='%(prog)s ' + __version__)
@@ -164,13 +165,17 @@ def main():
     url_escape = {ord('='): '%3D', 
                   ord(','): '%2C', 
                   ord(';'): '%3B', 
-                  ord('\t'): '%09'
+                  ord('&'): '%26', 
+                  ord('\t'): '%09',
+                  ord('%'): '%25',
                  }
 
     predef_tags = ['ID', 'Parent', 'Name', 'Alias', 'Target', 'Gap', \
                    'Derives_from', 'Note', 'Dbxref', 'Ontology_term', \
                    'Is_circular'\
                   ]
+
+    field_trans = {'product': 'Note'}
 
     # Assign variables based on user inputs
     out_h = args.out.write
@@ -279,16 +284,20 @@ def main():
 
         # Update Parent attribute if feature is a child
         if 'Parent' in entry.attributes:
-            try:
-                pid = id_lookup[entry.attributes['Parent']]
-            except KeyError:
-                print("error: formatting error in GFF3 file '{}'. Parent "
-                      "features must come before child features in the "
-                      "input GFF3 files".format(file_order[item[0]]), \
-                      file=sys.stderr)
-                sys.exit(1)
+            old_pids = entry.attributes['Parent'].split(',')
+            new_pids = []
+            for old_pid in old_pids:
+                try:
+                    new_pid = id_lookup[old_pid]
+                except KeyError:
+                    print("error: formatting error in GFF3 file '{}'. Parent "
+                          "features must come before child features in the "
+                          "input GFF3 files".format(file_order[item[0]]), \
+                          file=sys.stderr)
+                    sys.exit(1)
+                new_pids.append(new_pid)
 
-            entry.attributes['Parent'] = pid
+            entry.attributes['Parent'] = ','.join(new_pids)
 
         # Annotate features of a given type only
         if feature_type:
@@ -302,7 +311,7 @@ def main():
         # clear existing attributes if directed
         if args.clear_attrs:
             for attr in entry.attributes:
-                if attr not in predef_tags:
+                if not attr[0].isupper():
                     del(entry.attributes[attr])
 
         # Annotate features using attributes field
@@ -317,7 +326,7 @@ def main():
             annot_totals += 1
             subject = hit.subject
 
-            attrs = [('Name', subject)]
+            attrs = [('Alias', subject)]
             # Include additional information about a hit if a relational 
             # database provided
             if mapping:
