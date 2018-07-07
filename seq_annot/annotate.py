@@ -172,7 +172,8 @@ def main():
 
     predef_tags = ['ID', 'Parent', 'Name', 'Alias', 'Target', 'Gap', \
                    'Derives_from', 'Note', 'Dbxref', 'Ontology_term', \
-                   'Is_circular'\
+                   'Is_circular', 'protein_id', 'transcript_id', 'pseudogenes',\
+                   'pseudo', 'locus_tag', 'product'
                   ]
 
     field_trans = {'product': 'Note'}
@@ -311,7 +312,7 @@ def main():
         # clear existing attributes if directed
         if args.clear_attrs:
             for attr in entry.attributes:
-                if not attr[0].isupper():
+                if not attr[0].isupper() or not attr in predef_tags:
                     del(entry.attributes[attr])
 
         # Annotate features using attributes field
