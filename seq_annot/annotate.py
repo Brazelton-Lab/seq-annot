@@ -49,7 +49,7 @@ __author__ = "Christopher Thornton"
 __license__ = 'GPLv3'
 __maintainer__ = 'Christopher Thornton'
 __status__ = "Alpha"
-__version__ = "0.3.0"
+__version__ = "0.3.1"
 
 
 def do_nothing(*args):
@@ -161,22 +161,11 @@ def main():
     # Track program run-time
     start_time = time()
 
-    # URL escape character translation for predefined attribute characters
-    url_escape = {ord('='): '%3D', 
-                  ord(','): '%2C', 
-                  ord(';'): '%3B', 
-                  ord('&'): '%26', 
-                  ord('\t'): '%09',
-                  ord('%'): '%25',
-                 }
-
-    predef_tags = ['ID', 'Parent', 'Name', 'Alias', 'Target', 'Gap', \
-                   'Derives_from', 'Note', 'Dbxref', 'Ontology_term', \
-                   'Is_circular', 'protein_id', 'transcript_id', 'pseudogenes',\
-                   'pseudo', 'locus_tag', 'product'
+    # Predefined attribute characters
+    predef_tags = ['protein_id', 'transcript_id', 'pseudogenes', 'pseudo', \
+                   'locus_tag', 'product', 'ec_number', 'mobile_element', \
+                   'mobile_element_type', 'inference'
                   ]
-
-    field_trans = {'product': 'Note'}
 
     # Assign variables based on user inputs
     out_h = args.out.write
@@ -246,6 +235,7 @@ def main():
     annot_totals = 0  #all features with annotation
     ftype_totals = 0  #features with type matching argument input
     no_map = 0  #track hits without an entry in the relational database
+    no_id = 0  #track GFF3 entries without ID attribute to link to protein seq
 
     prev_name = None
     id_lookup = {}  #track IDs for parent-child reference
@@ -262,11 +252,16 @@ def main():
         gff_totals += 1
 
         try:
-            feature_id = entry.attributes['ID'].split('_')[-1]  #id is second
-        except TypeError:
-            print("error: unable to find the ID attribute in line {}"\
-                  .format(entry.origline), file=sys.stderr)
+            chrom, feature_id = entry.attributes['ID'].rsplit('_', 1)  #id is second
+        except KeyError:
+            no_id += 1
+            continue
+        except ValueError:
+            print("error: ID attribute in line {} of the GFF3 file should be of the form "
+                  "<sequenceID>_<featureID>".format(entry.origline), file=sys.stderr)
             sys.exit(1)
+        except AttributeError:
+            chrom, feature_id = entry.attributes['ID'][0].split('_')  #a list
 
         # Track number features on a given chromosome for updating the ID attr
         if seq_id == prev_name:
@@ -285,7 +280,10 @@ def main():
 
         # Update Parent attribute if feature is a child
         if 'Parent' in entry.attributes:
-            old_pids = entry.attributes['Parent'].split(',')
+            try:
+                old_pids = entry.attributes['Parent'].split(',')
+            except AttributeError:
+                old_pids = entry.attributes['Parent']  #already a list
             new_pids = []
             for old_pid in old_pids:
                 try:
@@ -311,8 +309,8 @@ def main():
 
         # clear existing attributes if directed
         if args.clear_attrs:
-            for attr in entry.attributes:
-                if not attr[0].isupper() or not attr in predef_tags:
+            for attr in list(entry.attributes.keys()):
+                if not attr[0].isupper() and not attr in predef_tags:
                     del(entry.attributes[attr])
 
         # Annotate features using attributes field
@@ -344,8 +342,6 @@ def main():
                             no_fields[field] += 1
                         else:
                             if entry_value:  #entry field might be blank
-                                # Escape predifined characters
-                                entry_value = entry_value.translate(url_escape)
                                 attrs.append((field, entry_value))
 
             for attr in attrs:
@@ -362,6 +358,11 @@ def main():
     if no_map > 0:
         print("warning: there were {!s} alignments that did not have a "
               "corresponding mapping entry\n".format(no_map), file=sys.stderr)
+
+    if no_id > 0:
+        print("warning: there were {!s} features without an ID attribute tag "
+              "linking them to a protein sequence\n".format(no_id), \
+              file=sys.stderr)
 
     for map_field in no_fields:
         no_map_size = no_fields[map_field]
