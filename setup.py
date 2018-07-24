@@ -2,7 +2,7 @@
 from setuptools import setup
 
 setup(name='seq-annot',
-      version='0.2.9',
+      version='0.3.0',
       packages=['seq_annot',],
       description='Tools that fascilitate the annotation and functional '
           'comparison of genomes and metagenomes',
@@ -31,7 +31,8 @@ setup(name='seq-annot',
               'count_features = seq_annot.count:main',
               'annotate_features = seq_annot.annotate:main',
               'screen_features = seq_annot.screen:main',
-              'combine_features = seq_annot.combine:main'
+              'combine_features = seq_annot.combine:main',
+              'merge_reldbs = seq_annot.merge_dbs:main'
           ]
       }
       )
