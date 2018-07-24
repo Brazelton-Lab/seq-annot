@@ -8,7 +8,7 @@ from lzma import LZMAFile
 import io
 import sys
 
-def open_io(infile, mode='rb'):
+def open_io(infile, **kwargs):
     """Open input files based on file extension for reading or writing
     """
 
@@ -27,6 +27,6 @@ def open_io(infile, mode='rb'):
     except KeyError:
         pass
 
-    handle = algo(infile, mode=mode)
+    handle = algo(infile, **kwargs)
 
     return handle

@@ -37,7 +37,8 @@ import argparse
 import csv
 import json
 import os
-from seq_annot.seqio import open_input
+from seq_annot import merge_dbs
+from seq_annot.seqio import open_io
 import sys
 import textwrap
 from time import time
@@ -46,14 +47,14 @@ __author__ = 'Christopher Thornton'
 __license__ = 'GPLv3'
 __maintainer__ = 'Christopher Thornton'
 __status__ = "Alpha"
-__version__ = '0.1.3'
+__version__ = '0.2.1'
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('csvs',
-        metavar='in.csv [in.csv ...]',
+        metavar='in.csv',
         nargs='+',
         help="input one or more feature abundance files in CSV format")
     parser.add_argument('-m', '--mapping',
@@ -64,15 +65,6 @@ def main():
         help="input one or more relational databases in JSON format containing "
              "supplementary information about the features that should be "
              "added to the table")
-    parser.add_argument('-r', '--replicates',
-        metavar='in.tsv',
-        dest='db_overlaps',
-        action=Open,
-        mode='rt',
-        help="tab-separated file containing the identifiers of entries "
-             "contained in more than one of the provided databases. Should "
-             "consist of three columns, corresponding to: ID of template, ID "
-             "of replicate, replicate type. Entry info will be merged")
     parser.add_argument('-f', '--fields',
         metavar='FIELD [,FIELD,...]',
         action=ParseSeparator,
@@ -98,6 +90,22 @@ def main():
         sep=',',
         help="comma-separated list of feature IDs. Only those features "
              "with a match in the list will be output [default: output all]")
+    derep_group = parser.add_mutually_exclusive_group()
+    derep_group.add_argument('-r', '--dup-file',
+        metavar='in.tsv',
+        dest='dup_file',
+        action=Open,
+        mode='rt',
+        help="input tab-separated file containing database entries to combine. "
+             "The input relational databases should be provided as columns and "
+             "entries to merge between databases should be provided as rows. "
+             "Lines starting with # will be ignored.")
+    derep_group.add_argument('-e', '--dup-field',
+        metavar='FIELD',
+        dest='dup_field',
+        help="database field by which entries should be combined. The content "
+             "of entries with matching values in this field will be merged "
+             "across all provided relational databases")
     parser.add_argument('--version',
         action='version',
         version='%(prog)s ' + __version__)
@@ -124,74 +132,20 @@ def main():
     sample_names = args.names if args.names else [os.path.basename(i) for i \
                    in args.csvs]
     feature_names = args.features
-
-    if args.map_files:
-        mapping = {}
-        for map_file in args.map_files:
-            json_map = json.load(open_input(map_file))
-            mapping.update(json_map)
-    else:
-        mapping = None
-
     fields = args.fields
-
-    # Resolve duplicate database entries by merging
-    if args.db_overlaps and mapping:
-        # Iterate of replicates file
-        for line in args.db_overlaps:
-            split_line = line.strip().split('\t')
-            try:
-                replicate, template, rep_type = split_line
-            except ValueError:
-                print("error: unknown format for replicates file. See help for "
-                      "formatting requirements.", file=sys.stderr)
-                sys.exit(1)
-
-            if not replicate in mapping or not template in mapping:
-                continue
-
-            # Update entries only for fields of interest
-            for field in fields:
-                if field not in mapping[replicate] and field not in mapping[template]:
-                    continue
-                elif field not in mapping[replicate]:
-                    mapping[replicate][field] = mapping[template][field]
-                    continue
-                elif field not in mapping[template]:
-                    mapping[template][field] = mapping[replicate][field]
-                    continue
-                else:
-                    rep_entry = mapping[replicate][field]
-                    temp_entry = mapping[template][field]
-
-                if rep_entry == temp_entry:
-                    continue  #no change
-
-                if type(rep_entry) == type(list()) or type(temp_entry) == type(list()):
-                    merged = []
-                    for i in list(rep_entry) + list(temp_entry):
-                        if i.lower() in merged:
-                            continue
-                        else:
-                            merged.append(i)
-                else:
-                    if not rep_entry:
-                        merged = temp_entry
-                    elif not temp_entry:
-                        merged = re_entry
-                    else:
-                        merged = [rep_entry, temp_entry]
-
-                mapping[replicate][field] = merged
-                mapping[template][field] = merged
-
 
     # Store feature abundances in a dictionary
     totals = 0
     abundances = {}
     for position, csv_file in enumerate(args.csvs):
-        with open_input(csv_file) as csv_h:
-            for row in csv.reader(csv_h, delimiter='\t'):
+        with open_io(csv_file, mode='rb') as in_h:
+            for row in in_h:
+                row = row.decode('utf-8')
+
+                if row.startswith('#'):  #skip comments
+                    continue
+
+                row = row.split('\t')
 
                 try:
                     name, abundance = row
@@ -201,30 +155,51 @@ def main():
                                       "verify that that the file is formatted "
                                       "correctly".format(csv_file))
 
+                # Ignore features not found in list of features to include
                 if feature_names:
-                    # Ignore features not found in list of features to include
                     if name not in feature_names:
                         continue
 
-                if name not in abundances:
+                try:
+                    abundances[name][position] = float(abundance)
+                except KeyError:
                     abundances[name] = [float(0) for i in sample_names]
 
-                abundances[name][position] = float(abundance)
+    if args.map_files:
+        # Create header from sample names and desired fields
+        header_columns = fields + sample_names
 
-    # Output header
-    if mapping:
-        header_columns = sorted(fields) + sample_names
+        # Read in the relational databases
+        mapping = {}
+        all_fields = fields + [args.dup_field] if args.dup_field else fields
+        for map_file in args.map_files:
+            json_map = json.load(open_io(map_file))
+
+            # Iterate over JSON fiel
+            for item in json_map:
+                entry = {k: json_map[item][k] for k in json_map[item].keys() & \
+                        set(all_fields)}
+                mapping[item] = entry
+
+        if args.dup_file:
+            mapping = merge_dbs.derep_by_file(mapping, args.dup_file)
+        elif args.dup_field:
+            mapping = merge_dbs.derep_by_field(mapping, args.dup_field)
+
     else:
         header_columns = sample_names
+        mapping = None
 
+    # Output header
     header = "Feature\t{}\n".format('\t'.join(header_columns))
     out_h(header.encode('utf-8'))
 
     # Output feature abundances by sample
+    list_type = type(list())
     for feature in sorted(abundances):
         entries = []
         if mapping:
-            for field in sorted(fields):
+            for field in fields:
                 try:
                     entry = mapping[feature][field]
                 except KeyError:
@@ -234,7 +209,7 @@ def main():
                 if not entry:
                     entry = "NA"
 
-                if type(entry) == type(list()):
+                if type(entry) == list_type:
                     entry = ';'.join(entry)
 
                 entries.append(entry)
