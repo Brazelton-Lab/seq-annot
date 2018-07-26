@@ -47,7 +47,7 @@ __author__ = 'Christopher Thornton'
 __license__ = 'GPLv3'
 __maintainer__ = 'Christopher Thornton'
 __status__ = "Alpha"
-__version__ = '0.2.1'
+__version__ = '0.2.2'
 
 
 def main():
@@ -214,7 +214,7 @@ def main():
 
                 entries.append(entry)
 
-        entries = entries + ['{0:.2f}'.format(i) for i in abundances[feature]]
+        entries = entries + ['{:.4E}'.format(i) for i in abundances[feature]]
         out_h("{}\t{}\n".format(feature, '\t'.join(entries)).encode('utf-8'))
 
     # Output statistics
