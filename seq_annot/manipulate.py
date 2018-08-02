@@ -43,7 +43,7 @@ __author__ = 'Christopher Thornton'
 __license__ = 'GPLv3'
 __maintainer__ = 'Christopher Thornton'
 __status__ = "Alpha"
-__version__ = '0.1.2'
+__version__ = '0.1.3'
 
 
 def main():
@@ -66,14 +66,16 @@ def main():
         default=sys.stdout,
         help="output modified feature abundance table [default: output to "
              "stdout]")
-    parser.add_argument('-f', '--fields',
+    parser.add_argument('-i', '--insert',
         metavar='FIELD [,FIELD,...]',
+        dest='fields',
         action=ParseSeparator,
         sep=',',
         help="comma-separated list of fields from the relational database "
-             "that should be added to or removed from the abundance table")
-    parser.add_argument('-r', '--filter',
+             "that should be added to the abundance table")
+    parser.add_argument('-f', '--filter',
         metavar='FIELD:VALUE [FIELD:VALUE ...]',
+        dest='filter',
         nargs='*',
         help="list of field-value pairs. Features containing the field values "
              "will be filtered out of the abundance table. Arguments must be "
@@ -171,9 +173,8 @@ def main():
         # Filter table
         fail = 0
         for index in indexes:
-            new_index = index + new_len
-            value = split_line[new_index].split(';')
-            if set(value).intersection(indexes[new_index]):
+            value = split_line[index].split(';')
+            if set(value).intersection(indexes[index]):
                 fail = 1
                 break
         if fail:
