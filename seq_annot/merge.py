@@ -43,7 +43,7 @@ __author__ = 'Christopher Thornton'
 __license__ = 'GPLv3'
 __maintainer__ = 'Christopher Thornton'
 __status__ = "Alpha"
-__version__ = '0.1.0'
+__version__ = '0.2.5'
 
 
 def derep_by_file(mapping, inhandle):
@@ -87,11 +87,13 @@ def derep_by_field(mapping, rep_field):
         entries = rev_map[rep_value]
         if len(entries) > 1:
             merged = merge_entries(mapping, entries)
+        else:
+            merged = mapping[entries[0]]
 
-            for entry in entries:
-                del(mapping[entry])
+        for entry in entries:
+            del(mapping[entry])
 
-            mapping[rep_field] = merged
+        mapping[rep_value] = merged
 
     return mapping
 
@@ -160,11 +162,9 @@ def merge_entries(mapping, entry_list):
 def main():
     parser = argparse.ArgumentParser(description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('-m', '--mapping',
-        metavar='in.json',
-        dest='map_files',
-        action=ParseSeparator,
-        sep=',',
+    parser.add_argument('map_files',
+        metavar='in.json [in.json ...]',
+        nargs='+',
         help="input one or more relational databases in JSON format to merge")
     parser.add_argument('-o', '--out',
         action=Open,
