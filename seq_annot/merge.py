@@ -43,7 +43,7 @@ __author__ = 'Christopher Thornton'
 __license__ = 'GPLv3'
 __maintainer__ = 'Christopher Thornton'
 __status__ = "Alpha"
-__version__ = '0.2.5'
+__version__ = '0.2.6'
 
 
 def derep_by_file(mapping, inhandle):
@@ -68,7 +68,7 @@ def derep_by_file(mapping, inhandle):
 def derep_by_field(mapping, rep_field):
     """
     """
-    rev_map = {}
+    reverse_map = {}
     for entry in mapping:
         try:
             rep = mapping[entry][rep_field]
@@ -79,20 +79,22 @@ def derep_by_field(mapping, rep_field):
             sys.exit(1)
 
         try:
-            rev_map[rep].append(entry)
+            reverse_map[rep].append(entry)
         except KeyError:
-            rev_map[rep] = [entry]
+            reverse_map[rep] = [entry]
 
-    for rep_value in rev_map:
-        entries = rev_map[rep_value]
-        if len(entries) > 1:
+    for rep in reverse_map:
+        entries = reverse_map[rep]
+        if len(entries) > 1:  #found replicates
             merged = merge_entries(mapping, entries)
-        else:
+        else:  #no replicates
             merged = mapping[entries[0]]
-
+        
+        # Reduce memory usage by removing entries from mapping
         for entry in entries:
             del(mapping[entry])
 
+        del(merged[rep_field])  #replicate field is now entry ID, so remove
         mapping[rep_value] = merged
 
     return mapping
