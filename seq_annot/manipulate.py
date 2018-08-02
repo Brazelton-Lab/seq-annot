@@ -43,7 +43,7 @@ __author__ = 'Christopher Thornton'
 __license__ = 'GPLv3'
 __maintainer__ = 'Christopher Thornton'
 __status__ = "Alpha"
-__version__ = '0.1.0'
+__version__ = '0.1.2'
 
 
 def main():
@@ -166,12 +166,14 @@ def main():
             new_values.append(field_val)
         
         split_line = split_line[0:1] + new_values + split_line[1:]
+        new_len = len(new_values)
 
         # Filter table
         fail = 0
         for index in indexes:
-            value = split_line[index].split(';')
-            if set(value).intersection(indexes[index]):
+            new_index = index + new_len
+            value = split_line[new_index].split(';')
+            if set(value).intersection(indexes[new_index]):
                 fail = 1
                 break
         if fail:
