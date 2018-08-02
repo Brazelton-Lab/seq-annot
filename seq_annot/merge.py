@@ -89,7 +89,9 @@ def derep_by_field(mapping, rep_field):
             merged = merge_entries(mapping, entries)
 
             for entry in entries:
-                mapping[entry] = merged
+                del(mapping[entry])
+
+            mapping[rep_field] = merged
 
     return mapping
 
