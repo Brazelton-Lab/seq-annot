@@ -73,11 +73,11 @@ def main():
         help="comma-separated list of fields from the relational database "
              "that should be added to or removed from the abundance table")
     parser.add_argument('-r', '--filter',
-        metavar='FIELD:VALUE [,FIELD:VALUE,...]',
-        action=ParseSeparator,
-        sep=',',
-        help="comma-separated list of field-value pairs. Features containing "
-             "the field value will be filtered out of the abundance table")
+        metavar='FIELD:VALUE [FIELD:VALUE ...]',
+        nargs='*',
+        help="list of field-value pairs. Features containing the field values "
+             "will be filtered out of the abundance table. Arguments must be "
+             "quoted if spaces are contained in either the field or value")
     args = parser.parse_args()
 
     if (args.map_files and not args.fields) or \
