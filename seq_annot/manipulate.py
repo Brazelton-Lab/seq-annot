@@ -51,7 +51,6 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('abunds',
         metavar='in.csv',
-        dest='in_abund',
         action=Open,
         mode='rb',
         help="input tab-separated feature abundance table")
@@ -81,10 +80,13 @@ def main():
              "the field value will be filtered out of the abundance table")
     args = parser.parse_args()
 
-    if (args.mapping and not args.fields) or \
-        (args.fields and not args.mapping):
+    if (args.map_files and not args.fields) or \
+        (args.fields and not args.map_files):
         parser.error("error: -m/--mapping and -f/--fields must be supplied "
                      "together")
+
+    # Speedup tricks
+    list_type = type(list())
 
     # Output run information
     all_args = sys.argv[1:]
@@ -114,14 +116,11 @@ def main():
 
                 mapping[item] = entry
 
-    header = args.abunds.readline()
-    header = header[1:].split('\t')  #remove comment character
+    header = args.abunds.readline().decode()
+    header = header.strip().split('\t')
 
     # Insert new fields into table, if applicable
     header = header[0:1] + fields + header[1:]
-
-    # Output header
-    out_h.write('#{}'.format('\t'.join(header)))
 
     # Find column number of fields to filter
     indexes = {}
@@ -138,8 +137,12 @@ def main():
 
     feature_ind = header.index('Feature')
 
+    # Output header
+    out_h.write('{}\n'.format('\t'.join(header)))
+
     # Read abundance table
     for line in args.abunds:
+        line = line.decode()
         if line.startswith('#'):
             continue
         
@@ -153,6 +156,10 @@ def main():
                 field_val = mapping[feature][field]
             except KeyError:
                 field_val = 'NA'
+
+            if type(field_val) == list_type:
+                field_val = ';'.join(field_val)
+
             new_values.append(field_val)
         
         split_line = split_line[0:1] + new_values + split_line[1:]
@@ -167,7 +174,11 @@ def main():
         if fail:
             continue
         else:
-            out_h.write('\t'.join(split_line))
+            try:
+                out_h.write('{}\n'.format('\t'.join(split_line)))
+            except TypeError:
+                print(split_line)
+                sys.exit(1)
 
     # Calculate and print program run-time info
     end_time = time()

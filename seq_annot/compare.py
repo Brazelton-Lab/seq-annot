@@ -210,7 +210,7 @@ def main():
                     abundances[feature_id][position + end_pos] += float(abundance)
 
     # Output header
-    header = "#Feature\t{}\n".format('\t'.join(header_columns))
+    header = "Feature\t{}\n".format('\t'.join(header_columns))
     out_h(header.encode('utf-8'))
 
     # Output feature abundances by sample
