@@ -37,7 +37,6 @@ import argparse
 import csv
 import json
 import os
-from seq_annot import merge_dbs
 from seq_annot.seqio import open_io
 import sys
 import textwrap
@@ -47,7 +46,7 @@ __author__ = 'Christopher Thornton'
 __license__ = 'GPLv3'
 __maintainer__ = 'Christopher Thornton'
 __status__ = "Alpha"
-__version__ = '0.2.2'
+__version__ = '0.3.4'
 
 
 def main():
@@ -90,31 +89,27 @@ def main():
         sep=',',
         help="comma-separated list of feature IDs. Only those features "
              "with a match in the list will be output [default: output all]")
-    derep_group = parser.add_mutually_exclusive_group()
-    derep_group.add_argument('-r', '--dup-file',
-        metavar='in.tsv',
-        dest='dup_file',
-        action=Open,
-        mode='rt',
-        help="input tab-separated file containing database entries to combine. "
-             "The input relational databases should be provided as columns and "
-             "entries to merge between databases should be provided as rows. "
-             "Lines starting with # will be ignored.")
-    derep_group.add_argument('-e', '--dup-field',
+    parser.add_argument('-a', '--alias',
         metavar='FIELD',
-        dest='dup_field',
-        help="database field by which entries should be combined. The content "
-             "of entries with matching values in this field will be merged "
-             "across all provided relational databases")
+        dest='alias_field',
+        help="database field containing the alias by which a feature should "
+             "be known. Feature abundances will be combined for features with "
+             "identical alias")
     parser.add_argument('--version',
         action='version',
         version='%(prog)s ' + __version__)
     args = parser.parse_args()
 
-    if (args.fields and not args.map_files) or \
-        (args.map_files and not args.fields):
+    if args.fields and not args.map_files:
         parser.error("error: -m/--mapping and -f/--fields must be supplied "
                      "together")
+
+    if args.alias_field and not args.map_files:
+        parser.error("error: -m/--mapping and -a/--alias must be supplied "
+                     "together")
+
+    # Speedup trick
+    list_type = type(list())
 
     # Output run information
     all_args = sys.argv[1:]
@@ -132,7 +127,29 @@ def main():
     sample_names = args.names if args.names else [os.path.basename(i) for i \
                    in args.csvs]
     feature_names = args.features
-    fields = args.fields
+    fields = args.fields if args.fields else []
+    alias_field = args.alias_field
+    end_pos = len(fields)
+
+    if args.map_files and (alias_field or fields):
+        # Create header from sample names and desired fields
+        header_columns = fields + sample_names
+
+        # Read in the relational databases
+        mapping = {}
+        all_fields = fields + [args.alias_field] if args.alias_field else fields
+        for map_file in args.map_files:
+            json_map = json.load(open_io(map_file))
+
+            # Iterate over JSON field
+            for item in json_map:
+                entry = {k: json_map[item][k] for k in json_map[item].keys() & \
+                        set(all_fields)}
+                mapping[item] = entry
+
+    else:
+        header_columns = sample_names
+        mapping = None
 
     # Store feature abundances in a dictionary
     totals = 0
@@ -160,62 +177,48 @@ def main():
                     if name not in feature_names:
                         continue
 
+                # Search for alias
                 try:
-                    abundances[name][position] = float(abundance)
+                    feature_id = mapping[name][alias_field]
                 except KeyError:
-                    abundances[name] = [float(0) for i in sample_names]
+                    print("warning: unable to find an alias for '{!s}'"\
+                          .format(name), file=sys.stderr)
+                    feature_id = name
+                except AttributeError:
+                    feature_id = name
 
-    if args.map_files:
-        # Create header from sample names and desired fields
-        header_columns = fields + sample_names
+                try:
+                    abundances[feature_id][position + end_pos] += float(abundance)
+                except KeyError:
+                    entries = []
+                    for field in fields:
+                        try:
+                            entry = mapping[name][field]
+                        except KeyError:
+                            entry = "NA"
+                        except AttributeError:
+                            entry = "NA"
+                        if not entry:
+                            entry = "NA"
 
-        # Read in the relational databases
-        mapping = {}
-        all_fields = fields + [args.dup_field] if args.dup_field else fields
-        for map_file in args.map_files:
-            json_map = json.load(open_io(map_file))
+                        if type(entry) == list_type:
+                            entry = ';'.join(entry)
 
-            # Iterate over JSON fiel
-            for item in json_map:
-                entry = {k: json_map[item][k] for k in json_map[item].keys() & \
-                        set(all_fields)}
-                mapping[item] = entry
+                        entries.append(entry)
 
-        if args.dup_file:
-            mapping = merge_dbs.derep_by_file(mapping, args.dup_file)
-        elif args.dup_field:
-            mapping = merge_dbs.derep_by_field(mapping, args.dup_field)
-
-    else:
-        header_columns = sample_names
-        mapping = None
+                    abundances[feature_id] = entries + [float(0) for i in sample_names]
+                    abundances[feature_id][position + end_pos] += float(abundance)
 
     # Output header
-    header = "Feature\t{}\n".format('\t'.join(header_columns))
+    header = "#Feature\t{}\n".format('\t'.join(header_columns))
     out_h(header.encode('utf-8'))
 
     # Output feature abundances by sample
-    list_type = type(list())
-    for feature in sorted(abundances):
-        entries = []
-        if mapping:
-            for field in fields:
-                try:
-                    entry = mapping[feature][field]
-                except KeyError:
-                    entry = "NA"
-                except AttributeError:
-                    entry = "NA"
-                if not entry:
-                    entry = "NA"
-
-                if type(entry) == list_type:
-                    entry = ';'.join(entry)
-
-                entries.append(entry)
-
-        entries = entries + ['{:.4E}'.format(i) for i in abundances[feature]]
-        out_h("{}\t{}\n".format(feature, '\t'.join(entries)).encode('utf-8'))
+    for feature in abundances:
+        entries = abundances[feature]
+        entries = '\t'.join(entries[0:end_pos] + ['{:g}'.format(i) for i in \
+                                                  entries[end_pos:]])
+        out_h("{}\t{!s}\n".format(feature, entries).encode('utf-8'))
 
     # Output statistics
     f_totals = len(abundances)
