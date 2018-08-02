@@ -160,6 +160,9 @@ def main():
             if type(field_val) == list_type:
                 field_val = ';'.join(field_val)
 
+            if not field_val:
+                field_val = 'NA'
+
             new_values.append(field_val)
         
         split_line = split_line[0:1] + new_values + split_line[1:]
