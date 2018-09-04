@@ -51,7 +51,7 @@ __author__ = "Christopher Thornton"
 __license__ = 'GPLv3'
 __maintainer__ = 'Christopher Thornton'
 __status__ = "Alpha"
-__version__ = "0.4.1"
+__version__ = "0.4.2"
 
 
 def screen_aln_quality(hit, evalue=10, identity=0, length=0, score=0):
@@ -68,7 +68,7 @@ def screen_aln_quality(hit, evalue=10, identity=0, length=0, score=0):
 
         length (int): minimum length of the alignment [default: 0]
 
-        score (int): bit-score threshold [default: 0]
+        score (int): bitscore threshold [default: 0]
 
     Returns:
         bool: True if hit passes screening else False
@@ -190,6 +190,9 @@ def main():
         dest="format",
         action=ParseSeparator,
         sep=",",
+        default=["qaccver", "saccver", "pident", "length", "mismatch",
+                 "gapopen", "qstart", "qend", "sstart", "send", "evalue",
+                 "bitscore"],
         help="input ordered field specifiers [default: qaccver, saccver, "
              "pident, length, mismatch, gapopen, qstart, qend, sstart, send, "
              "evalue, bitscore]. The additional field specifiers 'qseq' and "
@@ -235,10 +238,6 @@ def main():
              "residue><position><mutant residue> (e.g. A254G). Argument must "
              "be used in conjunction with -m/--mapping. Screening for SNPs "
              "will be performed after alignment quality screening")
-    screen_method.add_argument('--best',
-        action='store_true',
-        help="discard all but the best hit. Requires that the input B6 file "
-             "be sorted by query name")
     output_control = parser.add_argument_group(title="output control options")
     output_control.add_argument('--snp',
         dest='only_snp',
@@ -305,7 +304,7 @@ def main():
     aln_totals = 0  #all alignments in B6 file
 
     prev_hit = ''
-    for hit in b6_iter(args.b6, header=specifiers, bh=args.best):
+    for hit in b6_iter(args.b6, header=specifiers):
         aln_totals += 1
 
         subject = hit.subject
