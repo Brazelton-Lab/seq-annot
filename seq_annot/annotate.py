@@ -49,7 +49,7 @@ __author__ = "Christopher Thornton"
 __license__ = 'GPLv3'
 __maintainer__ = 'Christopher Thornton'
 __status__ = "Alpha"
-__version__ = "0.3.1"
+__version__ = "0.3.2"
 
 
 def do_nothing(*args):
@@ -72,9 +72,7 @@ def main():
         sep=',',
         help="input one or more best-hit alignment files in B6/M8 format. The "
              "alignment format should be provided to -s/--specifiers if other "
-             "than the default BLAST+ tabular format. If a given feature has "
-             "a match in more than one alignment file, precedence will be "
-             "determined by input order")
+             "than the default BLAST+ tabular format")
     parser.add_argument('-m', '--mapping',
         metavar='in.json [,in.json,...]',
         dest='map_files',
@@ -216,9 +214,9 @@ def main():
                         continue
                     else:
                         # Determine which match has the best alignment score
-                        prev_score = hits[query].bit_score
+                        prev_score = hits[query].bitscore
 
-                        if prev_score >= hit.bit_score:
+                        if prev_score >= hit.bitscore:
                             out_log("{}\t{}\t{}\n".format(hits[query].subject, \
                                     hit.subject, 'score').encode('utf-8'))
                             continue  #existing match is best

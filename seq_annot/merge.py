@@ -95,7 +95,7 @@ def derep_by_field(mapping, rep_field):
             del(mapping[entry])
 
         del(merged[rep_field])  #replicate field is now entry ID, so remove
-        mapping[rep_value] = merged
+        mapping[rep] = merged
 
     return mapping
 
@@ -222,7 +222,11 @@ def main():
             entry = json_map[item]
 
             if fields:
-                add_entry = {k: entry[k] for k in entry.keys() & set(fields)}
+                try:
+                    add_entry = {k: entry[k] for k in entry.keys() & set(fields)}
+                except AttributeError:
+                    print(entry)
+                    sys.exit(1)
             else:
                 add_entry = entry
 
