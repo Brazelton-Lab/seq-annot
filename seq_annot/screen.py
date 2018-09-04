@@ -51,7 +51,7 @@ __author__ = "Christopher Thornton"
 __license__ = 'GPLv3'
 __maintainer__ = 'Christopher Thornton'
 __status__ = "Alpha"
-__version__ = "0.4.0"
+__version__ = "0.4.1"
 
 
 def screen_aln_quality(hit, evalue=10, identity=0, length=0, score=0):
@@ -73,10 +73,10 @@ def screen_aln_quality(hit, evalue=10, identity=0, length=0, score=0):
     Returns:
         bool: True if hit passes screening else False
     """
-    condition = (hit.evalue <= evalue and hit.perc_identical >= identity and \
-                 hit.align_len >= length and hit.bit_score >= float(score))
+    passed = (hit.evalue <= evalue and hit.identity >= identity and \
+                 hit.length >= length and hit.bitscore >= float(score))
 
-    if condition:
+    if passed:
         return True
     else:
         return False
@@ -109,14 +109,14 @@ def screen_snp(hit, snps, only_snp=False):
             return True
 
     try:
-        qseq = hit.add_specs['qseq']
+        qseq = hit.custom_fs['qseq']
     except KeyError:
         print("error: the format specifier 'qseq' is required for "
               "secondary screening of SNPs".format(), file=sys.stderr)
         sys.exit(1)
 
     try:
-        sseq = hit.add_specs['sseq']
+        sseq = hit.custom_fs['sseq']
     except KeyError:
         print("error: the format specifier 'sseq' is required for "
               "secondary screening of SNPs".format(), file=sys.stderr)
@@ -354,14 +354,14 @@ def main():
 
                 if s_pass:
                     passed_total += 1
-                    out_h(hit.write(defaults=default_only).encode('utf-8'))
+                    out_h(hit.write(default=defaults_only).encode('utf-8'))
                 else:
                     failed_snp += 1
                     out_d("{}\tSNP screen\n".format(hit.query).encode('utf-8'))
 
             else:
                 passed_total += 1
-                out_h(hit.write(defaults=default_only).encode('utf-8'))
+                out_h(hit.write(default=defaults_only).encode('utf-8'))
 
         else:
             failed_qual += 1
