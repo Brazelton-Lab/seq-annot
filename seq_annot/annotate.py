@@ -92,6 +92,9 @@ def main():
         dest="format",
         action=ParseSeparator,
         sep=",",
+        default=["qaccver", "saccver", "pident", "length", "mismatch", 
+                 "gapopen", "qstart", "qend", "sstart", "send", "evalue", 
+                 "bitscore"], 
         help="input alignment format, ordered by field specifier [default: "
              "qaccver, saccver, pident, length, mismatch, gapopen, qstart, "
              "qend, sstart, send, evalue, bitscore]")
