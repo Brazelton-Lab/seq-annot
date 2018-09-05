@@ -49,7 +49,7 @@ __author__ = "Christopher Thornton"
 __license__ = 'GPLv3'
 __maintainer__ = 'Christopher Thornton'
 __status__ = "Alpha"
-__version__ = "0.3.2"
+__version__ = "0.4.0"
 
 
 def do_nothing(*args):
@@ -364,7 +364,7 @@ def main():
                         attr_name = attr_names[field]
 
                         try:
-                            entry_value = sub_entry[field].lstrip()
+                            entry_value = sub_entry[field]
                         except KeyError:
                             no_fields[field] += 1
                         else:
