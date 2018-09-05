@@ -126,7 +126,7 @@ def main():
              "information in relational database (e.g. hypothetical protein)")
     parser.add_argument('-a', '--alias',
         metavar='Field:Alias',
-        dest=field_alias,
+        dest='field_alias',
         action='append',
         help="alias to use in place of the field name when outputting "
              "attributes (e.g. gene:Name). Can provide multiple aliases "
