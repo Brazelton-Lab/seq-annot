@@ -103,8 +103,8 @@ def main():
         dest='fields',
         action=ParseSeparator,
         sep=',',
-        help="comma-separated list of fields from the relational database "
-             "that should be included as attributes, if relevant")
+        help="comma-separated list of fields from the provided relational "
+             "database that should be included as attributes")
     parser.add_argument('-c', '--conflict',
         dest='precedence',
         choices=['order', 'quality'],
@@ -113,7 +113,7 @@ def main():
              "Options are 'order' and 'quality'. If 'order', precedence will "
              "be determined by input file order. If 'quality', precedence "
              "will be given to the match with the highest quality alignment, "
-             "as determined by bitscore")
+             "determined by bitscore")
     parser.add_argument('-t', '--type',
         dest='ftype',
         help="feature type (3rd column in GFF file) to annotate [default: "
@@ -123,7 +123,14 @@ def main():
         metavar='STR',
         dest='prod_def',
         help="default product for features without associated product "
-             "information in relational database")
+             "information in relational database (e.g. hypothetical protein)")
+    parser.add_argument('-a', '--alias',
+        metavar='Field:Alias',
+        dest=field_alias,
+        action='append',
+        help="alias to use in place of the field name when outputting "
+             "attributes (e.g. gene:Name). Can provide multiple aliases "
+             "through repeated use of the argument")
     output_control = parser.add_argument_group(title="output control options")
     output_control.add_argument('-d', '--discarded',
         metavar='out.log',
@@ -152,6 +159,10 @@ def main():
         parser.error("error: -m/--mapping and -f/--fields must be supplied "
                      "together")
 
+    if args.field_alias and not (args.map_files and args.fields):
+        parser.error("error: -m/--mapping and -f/--fields must be supplied "
+                     "when -a/--alias is used")
+
     # Output run information
     all_args = sys.argv[1:]
     print("{} {!s}".format('annotate_features', __version__), file=sys.stderr)
@@ -173,11 +184,12 @@ def main():
     out_log = args.log.write if args.log else do_nothing
     out_log("#Kept\tDiscarded\tReason\n".encode('utf-8'))
 
-    map_fields = args.fields
+    map_fields = args.fields if args.fields else []
     match_precedence = args.precedence
     specifiers = args.format
     default_product = args.prod_def
     feature_type = args.ftype
+    attr_alias = args.field_alias if args.field_alias else []
 
     no_fields = {}
     if args.map_files:
@@ -193,6 +205,18 @@ def main():
             no_fields[map_field] = 0
     else:
         mapping = None
+
+    # Dictionary of fields and their respective aliases
+    attr_names = {}
+    alias_fields = [i.split(':')[0] for i in attr_alias]
+    all_fields = attr_alias + [i for i in map_fields if i not in alias_fields]
+    for attr in all_fields:
+        try:
+            field_name, alias = attr.split(':')
+        except ValueError:
+            field_name = alias = attr
+
+        attr_names[field_name] = alias
 
     # Parse results of the homology search
     aln_totals = 0  #all hits to any database
@@ -337,20 +361,26 @@ def main():
                 else:
                     # Only include information from the requested fields
                     for field in map_fields:
+                        attr_name = attr_names[field]
+
                         try:
                             entry_value = sub_entry[field].lstrip()
                         except KeyError:
                             no_fields[field] += 1
                         else:
                             if entry_value:  #entry field might be blank
-                                attrs.append((field, entry_value))
+                                attrs.append((attr_name, entry_value))
 
             for attr in attrs:
                 entry.attributes[attr[0]] = attr[1]  #(name, value)
 
         # Add default to product attribute if it doesn't already exist
         if 'product' not in entry.attributes and default_product:
-            entry.attributes['product'] = default_product
+            try:
+                prod_name = attr_names['product']
+            except KeyError:
+                prod_name = 'product'
+            entry.attributes[prod_name] = default_product
 
         # Write features to new GFF3 file
         out_h(entry.write().encode('utf-8'))
