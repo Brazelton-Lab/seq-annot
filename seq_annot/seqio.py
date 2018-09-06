@@ -30,3 +30,12 @@ def open_io(infile, **kwargs):
     handle = algo(infile, **kwargs)
 
     return handle
+
+def write_io(out_h, output):
+    """Write output to file handle
+    """
+    try:  # Output to file
+        out_h.write(output.encode('utf-8'))
+    except TypeError:  # Output to stdout
+        out_h.write(output)
+

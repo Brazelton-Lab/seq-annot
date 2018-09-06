@@ -34,6 +34,7 @@ from arandomness.argparse import Open, ParseSeparator
 import argparse
 import json
 import os
+from seq_annot.reldb import load_dbs, derep_by_field, derep_by_file
 from seq_annot.seqio import open_io
 import sys
 import textwrap
@@ -44,60 +45,6 @@ __license__ = 'GPLv3'
 __maintainer__ = 'Christopher Thornton'
 __status__ = "Alpha"
 __version__ = '0.2.6'
-
-
-def derep_by_file(mapping, inhandle):
-    """
-    """
-    for line in inhandle:
-        if line.startswith('#'):
-                continue
-
-        split_line = line.strip().split('\t')
-
-        # Combine entries from multiple databases
-        merged = merge_entries(mapping, split_line)
-
-        # Update database entries with combined information
-        for entry in split_line:
-            mapping[entry] = merged
-
-    return mapping
-
-
-def derep_by_field(mapping, rep_field):
-    """
-    """
-    reverse_map = {}
-    for entry in mapping:
-        try:
-            rep = mapping[entry][rep_field]
-        except KeyError:
-            print("error: field '{}' not found in the combined relational "
-                  "database for entry '{}'".format(rep_field, entry), \
-                  file=sys.stderr)
-            sys.exit(1)
-
-        try:
-            reverse_map[rep].append(entry)
-        except KeyError:
-            reverse_map[rep] = [entry]
-
-    for rep in reverse_map:
-        entries = reverse_map[rep]
-        if len(entries) > 1:  #found replicates
-            merged = merge_entries(mapping, entries)
-        else:  #no replicates
-            merged = mapping[entries[0]]
-        
-        # Reduce memory usage by removing entries from mapping
-        for entry in entries:
-            del(mapping[entry])
-
-        del(merged[rep_field])  #replicate field is now entry ID, so remove
-        mapping[rep] = merged
-
-    return mapping
 
 
 def merge_entries(mapping, entry_list):
@@ -192,9 +139,9 @@ def main():
     derep_group.add_argument('-e', '--dup-field',
         metavar='FIELD',
         dest='dup_field',
-        help="database field by which entries should be combined. The content "
-             "of entries with matching values in this field will be merged "
-             "across all provided relational databases")
+        help="database field through which entries should be combined. The "
+             "content of entries with matching values in this field will be "
+             "merged across all provided relational databases")
     args = parser.parse_args()
 
     # Output run information
@@ -215,22 +162,7 @@ def main():
         fields.append(args.dup_field)
 
     # Load databases
-    mapping = {}
-    for map_file in args.map_files:
-        json_map = json.load(open_io(map_file))
-        for item in json_map:
-            entry = json_map[item]
-
-            if fields:
-                try:
-                    add_entry = {k: entry[k] for k in entry.keys() & set(fields)}
-                except AttributeError:
-                    print(entry)
-                    sys.exit(1)
-            else:
-                add_entry = entry
-
-            mapping[item] = add_entry
+    mapping = load_dbs(args.map_files, fields=fields)
 
     if args.dup_file:
         derep_algo = derep_by_file
