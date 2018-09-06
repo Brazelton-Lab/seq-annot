@@ -149,6 +149,9 @@ def main():
     abundances = {}
     for position, csv_file in enumerate(args.csvs):
         with open_io(csv_file, mode='rb') as in_h:
+            if args.header:
+                header = in_h.readline()
+
             for row in in_h:
 
                 row = row.decode('utf-8')
