@@ -34,10 +34,9 @@ from __future__ import print_function
 
 from arandomness.argparse import Open, ParseSeparator
 import argparse
-import csv
 import json
 import os
-from seq_annot.seqio import open_io
+from seq_annot.seqio import open_io, write_io
 import sys
 import textwrap
 from time import time
@@ -46,7 +45,7 @@ __author__ = 'Christopher Thornton'
 __license__ = 'GPLv3'
 __maintainer__ = 'Christopher Thornton'
 __status__ = "Alpha"
-__version__ = '0.3.4'
+__version__ = '0.4.0'
 
 
 def main():
@@ -95,6 +94,9 @@ def main():
         help="database field containing the alias by which a feature should "
              "be known. Feature abundances will be combined for features with "
              "identical alias")
+    parser.add_argument('--header'
+        action='store_true',
+        help="First line of the input file is a header")
     parser.add_argument('--version',
         action='version',
         version='%(prog)s ' + __version__)
@@ -116,13 +118,12 @@ def main():
     print("{} {!s}".format('compare_features', __version__), file=sys.stderr)
     print(textwrap.fill("Command line parameters: {}"\
           .format(' '.join(all_args)), 79), file=sys.stderr)
-    print("", file=sys.stderr)
 
     # Track program run-time
     start_time = time()
 
     # Assign variables based on user input
-    out_h = args.out.write
+    out_h = args.out
 
     sample_names = args.names if args.names else [os.path.basename(i) for i \
                    in args.csvs]
@@ -136,31 +137,26 @@ def main():
         header_columns = fields + sample_names
 
         # Read in the relational databases
-        mapping = {}
         all_fields = fields + [args.alias_field] if args.alias_field else fields
-        for map_file in args.map_files:
-            json_map = json.load(open_io(map_file))
-
-            # Iterate over JSON field
-            for item in json_map:
-                entry = {k: json_map[item][k] for k in json_map[item].keys() & \
-                        set(all_fields)}
-                mapping[item] = entry
-
+        mapping = load_dbs(args.map_files, fields=all_fields)
     else:
         header_columns = sample_names
         mapping = None
 
     # Store feature abundances in a dictionary
+    no_alias = 0
     totals = 0
     abundances = {}
     for position, csv_file in enumerate(args.csvs):
         with open_io(csv_file, mode='rb') as in_h:
             for row in in_h:
+
                 row = row.decode('utf-8')
 
                 if row.startswith('#'):  #skip comments
                     continue
+                else:
+                    totals += 1
 
                 row = row.split('\t')
 
@@ -181,10 +177,9 @@ def main():
                 try:
                     feature_id = mapping[name][alias_field]
                 except KeyError:
-                    print("warning: unable to find an alias for '{!s}'"\
-                          .format(name), file=sys.stderr)
+                    no_alias += 1
                     feature_id = name
-                except AttributeError:
+                except (AttributeError, TypeError):
                     feature_id = name
 
                 try:
@@ -206,33 +201,43 @@ def main():
 
                         entries.append(entry)
 
-                    abundances[feature_id] = entries + [float(0) for i in sample_names]
+                    abundances[feature_id] = entries + [float(0) for i in \
+                                                        sample_names]
                     abundances[feature_id][position + end_pos] += float(abundance)
 
     # Output header
     header = "Feature\t{}\n".format('\t'.join(header_columns))
-    out_h(header.encode('utf-8'))
+    write_io(out_h, header)
 
     # Output feature abundances by sample
     for feature in abundances:
         entries = abundances[feature]
         entries = '\t'.join(entries[0:end_pos] + ['{:g}'.format(i) for i in \
                                                   entries[end_pos:]])
-        out_h("{}\t{!s}\n".format(feature, entries).encode('utf-8'))
+        write_io(out_h, "{}\t{!s}\n".format(feature, entries))
 
     # Output statistics
+    if alias_field:
+        print("", file=sys.stderr)
+        print("warning: unable to find an alias for {!s} features"\
+              .format(no_alias), file=sys.stderr)
+
     f_totals = len(abundances)
     s_totals = len(sample_names)
-    print("Features processed:", file=sys.stderr)
-    print("  - feature totals:\t{!s}".format(f_totals), file=sys.stderr)
-    print("  - samples merged:\t{!s}".format(s_totals), file=sys.stderr)
     print("", file=sys.stderr)
+    print("Features processed:", file=sys.stderr)
+    print("  - samples merged:\t{!s}".format(s_totals), file=sys.stderr)
+    print("  - feature totals:\t{!s}".format(f_totals), file=sys.stderr)
+    if alias_field:
+        print("  - features combined:\t{!s}".format(totals - f_totals), \
+              file=sys.stderr)
 
     # Calculate and print program run-time info
     end_time = time()
     total_time = (end_time - start_time) / 60.0
-    print("It took {:.2e} minutes to merge {!s} samples"\
-          .format(total_time, s_totals), file=sys.stderr)
+    print("", file=sys.stderr)
+    print("It took {:.2e} minutes to merge {!s} features from {!s} samples"\
+          .format(total_time, totals, s_totals), file=sys.stderr)
     print("", file=sys.stderr)
 
 
