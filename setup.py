@@ -2,7 +2,7 @@
 from setuptools import setup
 
 setup(name='seq-annot',
-      version='0.4.4',
+      version='0.5.0',
       packages=['seq_annot',],
       description='Tools that fascilitate the annotation and functional '
           'comparison of genomes and metagenomes',
@@ -18,7 +18,7 @@ setup(name='seq-annot',
       ],
       keywords='bioinformatics sequence profiling annotation',
       url='https://github.com/Brazelton-Lab/seq-annot/',
-      download_url = 'https://github.com/Brazelton-Lab/seq-annot/archive/v0.0.1.tar.gz',
+      download_url = 'https://github.com/Brazelton-Lab/seq-annot/archive/v0.5.0.tar.gz',
       author='Christopher Thornton',
       author_email='christopher.thornton@utah.edu',
       license='GPLv3',
