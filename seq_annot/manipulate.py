@@ -1,19 +1,20 @@
 #! /usr/bin/env python
 """
-Manipulate abundance table. Can add database fields or filter by cell value.
+Manipulate a feature abundance table by inserting new database fields and 
+subsetting via screening of the relational database.
 
-Usage:
-    manipulate_abund in.csv
-
-Required input is one or more CSV files containing feature abundances.
+Required input is a feature abundance table in TSV format and a relational
+database in JSON format.
 
 The compression algorithm is automatically detected for input files based on
 the file extension. To compress output, add the appropriate file extension
-to the output file name (e.g. .gz, .bz2).
+to the output file name (e.g. .gz, .bz2). Leave off '--out' to direct output to
+standard output (stdout). The input abundance table will be taken from 
+standard input (sdtin) by default.
 
 Copyright:
 
-    manipulate_abund manipulate an abundance table
+    manipulate_abund manipulate a feature abundance table
     Copyright (C) 2016  William Brazelton
 
     This program is free software: you can redistribute it and/or modify
@@ -32,9 +33,9 @@ Copyright:
 
 from arandomness.argparse import Open, ParseSeparator
 import argparse
-import json
 import os
-from seq_annot.seqio import open_io
+from seq_annot.reldb import filter_dbs, load_dbs
+from seq_annot.seqio import open_io, write_io
 import sys
 import textwrap
 from time import time
@@ -43,7 +44,7 @@ __author__ = 'Christopher Thornton'
 __license__ = 'GPLv3'
 __maintainer__ = 'Christopher Thornton'
 __status__ = "Alpha"
-__version__ = '0.1.3'
+__version__ = '0.2.4'
 
 
 def main():
@@ -53,9 +54,11 @@ def main():
         metavar='in.csv',
         action=Open,
         mode='rb',
+        default=sys.stdin,
         help="input tab-separated feature abundance table")
     parser.add_argument('-m', '--mapping',
-        metavar='in.json',
+        required=True,
+        metavar='in.json [,in.json,...]',
         dest='map_files',
         action=ParseSeparator,
         sep=',',
@@ -68,26 +71,27 @@ def main():
              "stdout]")
     parser.add_argument('-i', '--insert',
         metavar='FIELD [,FIELD,...]',
-        dest='fields',
+        dest='input_fields',
         action=ParseSeparator,
         sep=',',
         help="comma-separated list of fields from the relational database "
              "that should be added to the abundance table")
-    parser.add_argument('-f', '--filter',
-        metavar='FIELD:VALUE [FIELD:VALUE ...]',
-        dest='filter',
-        nargs='*',
-        help="list of field-value pairs. Features containing the field values "
-             "will be filtered out of the abundance table. Arguments must be "
-             "quoted if spaces are contained in either the field or value")
+    parser.add_argument('-s', '--subset',
+        metavar='FIELD:PATTERN',
+        dest='search_terms',
+        action='append',
+        help="pattern-matching criteria used to subset the relational "
+             "database. Can provide multiple criteria through repeated use "
+             "of the argument. Will separate field from the search pattern on "
+             "first encounter of the colon character. Features with field "
+             "value matching the pattern will be returned.")
     args = parser.parse_args()
 
-    if (args.map_files and not args.fields) or \
-        (args.fields and not args.map_files):
-        parser.error("error: -m/--mapping and -f/--fields must be supplied "
-                     "together")
+    if not (args.input_fields or args.search_terms):
+        parser.error("-m/--mapping must be used with either "
+                     "-i/--insert or -f/--filter")
 
-    # Speedup tricks
+    # Speedup trick
     list_type = type(list())
 
     # Output run information
@@ -102,89 +106,67 @@ def main():
 
     # Assign variables based on user input
     out_h = args.out
-    fields = args.fields if args.fields else []
 
-    filts = {j[0]: j[1] for j in [i.split(':', 1) for i in args.filter]} if \
-            args.filter else []
+    add_fields = args.input_fields if args.input_fields else []
+    search_fields = [i.split(':', 1)[0] for i in args.search_terms] \
+                    if args.search_terms else []
 
     # Load databases
-    mapping = {}
-    if args.map_files:
-        for map_file in args.map_files:
-            json_map = json.load(open_io(map_file))
-            for item in json_map:
-                entry = json_map[item]
-                entry = {k: entry[k] for k in entry.keys() & set(fields)}
+    mapping = load_dbs(args.map_files, fields=add_fields + search_fields)
 
-                mapping[item] = entry
+    # Remove entries from database if values do not match any of the patterns
+    mapping = filter_dbs(mapping, patterns=args.search_terms)
 
-    header = args.abunds.readline().decode()
+    # Insert new fields into table header, if applicable
+    try:
+        header = args.abunds.readline().decode('utf-8')
+    except AttributeError:
+        header = args.abunds.readline()
+
     header = header.strip().split('\t')
+    header = header[0:1] + add_fields + header[1:]
 
-    # Insert new fields into table, if applicable
-    header = header[0:1] + fields + header[1:]
+    write_io(out_h, '{}\n'.format('\t'.join(header)))
 
-    # Find column number of fields to filter
-    indexes = {}
-    for filt in filts:
-        if filt not in header:
-            print("warning: unknown column name '{}' provided to --filter"\
-                  .format(filt), file=sys.stderr)
-        else:
-            index = header.index(filt)
-            try:
-                indexes[index].append(filts[filt])
-            except KeyError:
-                indexes[index] = [filts[filt]]
+    # Iterate over feature abundance table
+    for row in args.abunds:
+        try:
+            row = row.decode('utf-8')
+        except AttributeError:
+            pass
 
-    feature_ind = header.index('Feature')
-
-    # Output header
-    out_h.write('{}\n'.format('\t'.join(header)))
-
-    # Read abundance table
-    for line in args.abunds:
-        line = line.decode()
-        if line.startswith('#'):
+        if row.startswith('#'):  # Skip comments
             continue
         
-        split_line = line.strip().split('\t')
-        feature = split_line[feature_ind]
+        split_row = row.strip().split('\t')
 
-        #Insert new field values
+        feature_name = split_row[0]
+
+        # Retain only those feature abundances with corresponding database 
+        # entries after database filtering
+        if search_fields:
+            if feature_name not in mapping:
+                continue
+
+        # Insert new field values
         new_values = []
-        for field in fields:
+        for add_field in add_fields:
             try:
-                field_val = mapping[feature][field]
-            except KeyError:
+                field_val = mapping[feature_name][add_field]
+            except KeyError:  # Feature or entry field not in database
                 field_val = 'NA'
 
-            if type(field_val) == list_type:
+            if type(field_val) == list_type:  # Attribute has multiple values
                 field_val = ';'.join(field_val)
 
             if not field_val:
                 field_val = 'NA'
 
             new_values.append(field_val)
-        
-        split_line = split_line[0:1] + new_values + split_line[1:]
-        new_len = len(new_values)
-
-        # Filter table
-        fail = 0
-        for index in indexes:
-            value = split_line[index].split(';')
-            if set(value).intersection(indexes[index]):
-                fail = 1
-                break
-        if fail:
-            continue
-        else:
-            try:
-                out_h.write('{}\n'.format('\t'.join(split_line)))
-            except TypeError:
-                print(split_line)
-                sys.exit(1)
+ 
+        # Output row
+        output = "\t".join(split_row[0:1] + new_values + split_row[1:])
+        write_io(out_h, "{}\n".format(output))
 
     # Calculate and print program run-time info
     end_time = time()
