@@ -165,3 +165,70 @@ def derep_by_field(mapping: dict, field: str):
         mapping[rep] = merged
 
     return(mapping)
+
+def merge_entries(mapping: dict, entries: list):
+    """Combine list of entries in a relational database
+    Args:
+        mapping (dict): dictionary containing the relational database
+
+        entries (list): list of entries in database to combine together
+
+    Returns:
+        dict: new entry created by combining all entries in entries list
+    """
+    list_type = type(list())
+
+    merged = {}
+    for ident in entry_list:
+        try:
+            entry = mapping[ident]
+        except KeyError:
+            print("warning: entry '{}' not found in the combined "
+                  "relational database".format(entry), file=sys.stderr)
+            continue
+
+        for f in entry:
+            try:
+                current = entry[f]
+            except KeyError:
+                continue
+
+            current_type = type(current)
+            try:
+                existing = merged[f]
+                existing_type = type(existing)
+            except KeyError:
+                merged[f] = current
+                continue
+
+            if current and not existing:
+                merged[f] = current
+                continue
+            elif existing and not current:
+                merged[f] = existing
+                continue
+            elif not (current and existing):
+                merged[f] = ""
+                continue
+
+            if current_type == list_type and existing_type == list_type:
+                merged_field = current + existing
+            elif current_type == list_type and existing_type != list_type:
+                current.append(existing)
+                merged_field = current
+            elif existing_type == list_type and current_type != list_type:
+                existing.append(current)
+                merged_field = existing
+            else:
+                if str(current) in str(existing):
+                    merged[f] = existing
+                    continue
+                elif str(existing) in str(current):
+                    merged[f] = current
+                    continue
+                else:
+                    merged_field = [current, existing]
+
+            merged[f] = list(set(merged_field))
+
+    return merged
