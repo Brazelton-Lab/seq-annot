@@ -40,6 +40,7 @@ from arandomness.argparse import Open, ParseSeparator
 import argparse
 from bio_utils.iterators import B6Reader, GFF3Reader
 import json
+from seq_annot.reldb import load_dbs
 from seq_annot.seqio import open_io, write_io
 import sys
 import textwrap
@@ -172,7 +173,6 @@ def main():
     print("{} {!s}".format('annotate_features', __version__), file=sys.stderr)
     print(textwrap.fill("Command line parameters: {}"\
           .format(' '.join(all_args)), 79), file=sys.stderr)
-    print("", file=sys.stderr)
 
     # Speedup tricks
     string_type = type(str())
@@ -181,7 +181,7 @@ def main():
     start_time = time()
 
     # Assign variables based on user inputs
-    out_h = args.out.write
+    out_h = args.out
     out_log = args.log.write if args.log else do_nothing
     out_log("#Kept\tDiscarded\tReason\n".encode('utf-8'))
 
@@ -205,6 +205,8 @@ def main():
     attr_names = {}
     alias_fields = [i.split(':')[0] for i in attr_alias]
     all_fields = attr_alias + [i for i in map_fields if i not in alias_fields]
+    if default_product and 'product' not in all_fields:
+        all_fields.append('product')
     for attr in all_fields:
         try:
             field_name, alias = attr.split(':')
@@ -259,7 +261,7 @@ def main():
             seq_id = entry.seqid
         except AttributeError:
             if entry.startswith('##'):
-                out_h("{}\n".format(entry).encode('utf-8'))
+                write_io(out_h, "{}\n".format(entry))
                 continue
             else:
                 continue  #don't output comments
@@ -270,6 +272,9 @@ def main():
             feature_id = entry.attributes[id_attr]
         except KeyError:
             no_id += 1
+            # Discard feature if unable to annotate and flag provided
+            if not args.filter:
+                write_io(out_h, entry.write())
             continue
 
         if type(feature_id) != string_type:
@@ -284,7 +289,7 @@ def main():
         if feature_type:
             if feature_type != entry.type:
                 if not args.filter:
-                    out_h(entry.write().encode('utf-8'))
+                    write_io(out_h, entry.write())
                 continue
             else:
                 ftype_totals += 1
@@ -300,6 +305,7 @@ def main():
             # Query name should be same as value in identifier attribute
             hit = hits[feature_id]
         except KeyError:
+            no_id += 1
             # Discard feature if unable to annotate and flag provided
             if args.filter:
                 continue
@@ -317,7 +323,7 @@ def main():
                     no_map += 1
                 else:
                     # Only include information from the requested fields
-                    for field in map_fields:
+                    for field in all_fields:
                         attr_name = attr_names[field]
 
                         try:
@@ -329,7 +335,7 @@ def main():
                                 entry.attributes[attr_name] = entry_value
 
         # Add default to product attribute if it doesn't already exist
-        if 'product' not in entry.attributes and default_product:
+        if attr_names['product'] not in entry.attributes and default_product:
             try:
                 prod_name = attr_names['product']
             except KeyError:
@@ -341,19 +347,22 @@ def main():
 
     # Calculate and print statistics
     if no_map > 0:
+        print("", file=sys.stderr)
         print("warning: there were {!s} alignments that did not have a "
-              "corresponding mapping entry\n".format(no_map), file=sys.stderr)
+              "corresponding mapping entry".format(no_map), file=sys.stderr)
 
     if no_id > 0:
+        print("", file=sys.stderr)
         print("warning: there were {!s} features without an ID attribute tag "
-              "linking them to a protein sequence\n".format(no_id), \
+              "linking them to a protein sequence".format(no_id), \
               file=sys.stderr)
 
     for map_field in no_fields:
         no_map_size = no_fields[map_field]
         if no_map_size > 0:
+            print("", file=sys.stderr)
             print("warning: there were {!s} alignments that did not have an "
-                  "entry with field '{}' in a mapping file\n"\
+                  "entry with field '{}' in a mapping file"\
                   .format(no_map_size, field), file=sys.stderr)
 
     print("", file=sys.stderr)
