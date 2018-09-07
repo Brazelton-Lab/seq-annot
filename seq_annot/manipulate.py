@@ -85,6 +85,10 @@ def main():
              "of the argument. Will separate field from the search pattern on "
              "first encounter of the colon character. Features with field "
              "value matching the pattern will be returned.")
+    parser.add_argument('--filter',
+        dest='filter',
+        action='store_true',
+        help="discard entries ")
     args = parser.parse_args()
 
     if not (args.input_fields or args.search_terms):
@@ -111,11 +115,13 @@ def main():
     search_fields = [i.split(':', 1)[0] for i in args.search_terms] \
                     if args.search_terms else []
 
+    keep_match = True if not args.filter else False
+
     # Load databases
     mapping = load_dbs(args.map_files, fields=add_fields + search_fields)
 
     # Remove entries from database if values do not match any of the patterns
-    mapping = filter_dbs(mapping, patterns=args.search_terms)
+    mapping = filter_dbs(mapping, patterns=args.search_terms, subset=keep_match)
 
     # Insert new fields into table header, if applicable
     try:
