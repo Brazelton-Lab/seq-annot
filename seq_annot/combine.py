@@ -37,9 +37,9 @@ from __future__ import print_function
 
 from arandomness.argparse import Open
 import argparse
-from bio_utils.iterators import gff3_iter
+from bio_utils.iterators import GFF3Reader
 import os
-from seq_annot.seqio import open_io
+from seq_annot.seqio import open_io, write_io
 import sys
 import textwrap
 from time import time
@@ -48,7 +48,7 @@ __author__ = 'Christopher Thornton'
 __license__ = 'GPLv3'
 __maintainer__ = 'Christopher Thornton'
 __status__ = "Alpha"
-__version__ = '0.1.2'
+__version__ = '0.2.0'
 
 
 def do_nothing(args):
@@ -124,8 +124,9 @@ def main():
         file_order[position] = gff_base
 
         with open_io(gff) as gff_h:
-            for feature in gff3_iter(gff_h):
+            gff_reader = GFF3Reader(gff_h)
 
+            for feature in gff3_reader.iterate():
                 try:
                     chrom_id = feature.seqid
                 except AttributeError:
@@ -134,8 +135,10 @@ def main():
                     elif feature.startswith('#'):
                         continue  #comments
                     else:
-                        print("error: unable to parse GFF3 file. The file may "
-                              "be formatted incorrectly", file=sys.stderr)
+                        line_number = gff_reader.current_line
+                        print("error: {}, line {!s}: unable to parse GFF3 "
+                              "file. The file may be formatted incorrectly"\
+                              .format(gff_base, line_number), file=sys.stderr)
                         sys.exit(1)
 
                 gff_totals += 1
