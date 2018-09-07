@@ -44,68 +44,7 @@ __author__ = 'Christopher Thornton'
 __license__ = 'GPLv3'
 __maintainer__ = 'Christopher Thornton'
 __status__ = "Alpha"
-__version__ = '0.2.6'
-
-
-def merge_entries(mapping, entry_list):
-    """
-    """
-    list_type = type(list())
-
-    merged = {}
-    for ident in entry_list:
-        try:
-            entry = mapping[ident]
-        except KeyError:
-            print("warning: entry '{}' not found in the combined "
-                  "relational database".format(entry), file=sys.stderr)
-            continue
-
-        for f in entry:
-            try:
-                current = entry[f]
-            except KeyError:
-                continue
-
-            current_type = type(current)
-            try:
-                existing = merged[f]
-                existing_type = type(existing)
-            except KeyError:
-                merged[f] = current
-                continue
-
-            if current and not existing:
-                merged[f] = current
-                continue
-            elif existing and not current:
-                merged[f] = existing
-                continue
-            elif not (current and existing):
-                merged[f] = ""
-                continue
-
-            if current_type == list_type and existing_type == list_type:
-                merged_field = current + existing
-            elif current_type == list_type and existing_type != list_type:
-                current.append(existing)
-                merged_field = current
-            elif existing_type == list_type and current_type != list_type:
-                existing.append(current)
-                merged_field = existing
-            else:
-                if str(current) in str(existing):
-                    merged[f] = existing
-                    continue
-                elif str(existing) in str(current):
-                    merged[f] = current
-                    continue
-                else:
-                    merged_field = [current, existing]
-
-            merged[f] = list(set(merged_field))
-
-    return merged
+__version__ = '0.3.0'
 
 
 def main():
