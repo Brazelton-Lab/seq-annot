@@ -35,7 +35,7 @@ def load_dbs(infiles:list, fields: list=None):
     return(mapping)
 
 
-def filter_dbs(mapping: dict, patterns: list):
+def filter_dbs(mapping: dict, patterns: list, subset: bool=True):
     """Search for entries in the database matching one or more of the provided
     patterns
 
@@ -45,6 +45,10 @@ def filter_dbs(mapping: dict, patterns: list):
 
         patterns (list): list of pattern-matching criteria used to filter the 
             relational database. Each item should be of the form FIELD:PATTERN
+
+        subset (bool): keep only those entries with values matching one or more
+            of the provided patterns. If False, will only keep those entries 
+            that do not match any of the provided patterns
 
     Returns:
         dict: filtered relational database
@@ -88,7 +92,9 @@ def filter_dbs(mapping: dict, patterns: list):
             if match:
                 break
 
-        if not match:
+        if not match and subset:
+            del mapping[entry_id]
+        elif match and not subset:
             del mapping[entry_id]
 
     return(mapping)
