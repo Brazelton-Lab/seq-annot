@@ -68,9 +68,6 @@ def filter_dbs(mapping: dict, patterns: list):
 
         merged[field] = regex
 
-    for item in merged:
-        print(merged[item])
-
     # Compile regular expressions
     criteria = {j: re.compile(k) for j, k in merged.items()}
 
