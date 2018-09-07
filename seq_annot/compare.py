@@ -36,6 +36,7 @@ from arandomness.argparse import Open, ParseSeparator
 import argparse
 import json
 import os
+from seq_annot.reldb import load_dbs
 from seq_annot.seqio import open_io, write_io
 import sys
 import textwrap
@@ -45,7 +46,7 @@ __author__ = 'Christopher Thornton'
 __license__ = 'GPLv3'
 __maintainer__ = 'Christopher Thornton'
 __status__ = "Alpha"
-__version__ = '0.4.0'
+__version__ = '0.4.1'
 
 
 def main():
@@ -94,9 +95,9 @@ def main():
         help="database field containing the alias by which a feature should "
              "be known. Feature abundances will be combined for features with "
              "identical alias")
-    parser.add_argument('--header'
+    parser.add_argument('--header',
         action='store_true',
-        help="First line of the input file is a header")
+        help="first line of the input file is a header")
     parser.add_argument('--version',
         action='version',
         version='%(prog)s ' + __version__)
