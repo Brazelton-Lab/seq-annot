@@ -167,68 +167,68 @@ def derep_by_field(mapping: dict, field: str):
     return(mapping)
 
 def merge_entries(mapping: dict, entries: list):
-    """Combine list of entries in a relational database
+    """Merge entries in a relational database
     Args:
         mapping (dict): dictionary containing the relational database
 
         entries (list): list of entries in database to combine together
 
     Returns:
-        dict: new entry created by combining all entries in entries list
+        dict: new entry created by combining the fields of all entries in the 
+            entries list
     """
     list_type = type(list())
 
     merged = {}
-    for ident in entry_list:
+    for entry_id in entries:
         try:
-            entry = mapping[ident]
+            entry = mapping[entry_id]
         except KeyError:
             print("warning: entry '{}' not found in the combined "
-                  "relational database".format(entry), file=sys.stderr)
+                  "relational database".format(entry_id), file=sys.stderr)
             continue
 
-        for f in entry:
+        for field in entry:
             try:
-                current = entry[f]
+                entry_value = entry[field]
             except KeyError:
                 continue
-
-            current_type = type(current)
-            try:
-                existing = merged[f]
-                existing_type = type(existing)
-            except KeyError:
-                merged[f] = current
-                continue
-
-            if current and not existing:
-                merged[f] = current
-                continue
-            elif existing and not current:
-                merged[f] = existing
-                continue
-            elif not (current and existing):
-                merged[f] = ""
-                continue
-
-            if current_type == list_type and existing_type == list_type:
-                merged_field = current + existing
-            elif current_type == list_type and existing_type != list_type:
-                current.append(existing)
-                merged_field = current
-            elif existing_type == list_type and current_type != list_type:
-                existing.append(current)
-                merged_field = existing
             else:
-                if str(current) in str(existing):
-                    merged[f] = existing
+                entry_type = type(entry_value)
+
+            try:
+                merged_value = merged[field]
+            except KeyError:
+                merged[field] = entry_value
+                continue
+            else:
+                merged_type = type(merged_value)
+
+            if entry_value and not merged_value:
+                merged[field] = entry_value
+                continue
+            elif (merged_value and not entry_value) \
+                or not (entry_value and merged_value):
+                continue
+
+            if entry_type == list_type and merged_type == list_type:
+                merged_field = entry_value + merged_value
+            elif entry_type == list_type and merged_type != list_type:
+                entry_value.append(merged_value)
+                merged_field = entry_value
+            elif merged_type == list_type and entry_type != list_type:
+                merged_value.append(entry_value)
+                merged_field = merged_value
+            else:
+                if str(entry_value) in str(merged_value):
+                    merged[field] = merged_value
                     continue
-                elif str(existing) in str(current):
-                    merged[f] = current
+                elif str(merged_value) in str(entry_value):
+                    merged[field] = entry_value
                     continue
                 else:
-                    merged_field = [current, existing]
+                    merged_field = [entry_value, merged_value]
 
-            merged[f] = list(set(merged_field))
+            merged[field] = list(set(merged_field))
 
     return merged
