@@ -36,13 +36,14 @@ Copyright:
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 """
 
-from __future__ import print_function
-
 from arandomness.argparse import Open, ParseSeparator
 import argparse
 from bio_utils.iterators import B6Reader
 import json
+import os
 import re
+from seq_annot.reldb import load_dbs
+from seq_annot.seqio import write_io
 import sys
 import textwrap
 from time import time
@@ -51,7 +52,7 @@ __author__ = "Christopher Thornton"
 __license__ = 'GPLv3'
 __maintainer__ = 'Christopher Thornton'
 __status__ = "Alpha"
-__version__ = "0.4.3"
+__version__ = "0.4.4"
 
 
 def screen_aln_quality(hit, evalue=10, identity=0, length=0, score=0):
@@ -272,20 +273,20 @@ def main():
     print("{} {!s}".format('screen_features', __version__), file=sys.stderr)
     print(textwrap.fill("Command line parameters: {}"\
           .format(' '.join(all_args)), 79), file=sys.stderr)
-    print("", file=sys.stderr)
 
     # Track program run-time
     start_time = time()
 
     # Assign variables based on user inputs
-    out_h = args.out.write
+    out_h = args.out
+
     if args.discards:
         out_d = args.discards.write
         out_d("#Discarded\tReason\n".encode('utf-8'))
     else:
         out_d = do_nothing
 
-    mapping = json.load(args.map_file) if args.map_file else None
+    mapping = load_dbs(args.map_file) if args.map_file else None
 
     specifiers = args.format
     score_field = args.score_field
@@ -314,21 +315,28 @@ def main():
             try:
                 sub_entry = mapping[subject]
             except KeyError:
-                print("error: subject id {} not found in the relational "
-                      "database".format(subject), file=sys.stderr)
+                line_number = b6_reader.current_line
+                filename = os.path.basename(b6_reader.filename)
+                print("error: {}, line {!s}: subject id {} not found in the "
+                      "database".format(filename, line_number, subject), 
+                      file=sys.stderr)
                 sys.exit(1)
 
         if score_field:
             try:
                 score = sub_entry[score_field]
             except KeyError:
-                print("error: field {} not found for {} in the relational "
-                      "database".format(score_field, subject), file=sys.stderr)
+                line_number = b6_reader.current_line
+                filename = os.path.basename(b6_reader.filename)
+                print("error: {}, line {!s}: {} has no field named {} in "
+                      "database".format(filename, line_number, subject, 
+                      score_field), file=sys.stderr)
                 sys.exit(1)
             else:
                 try:
                     score = float(score)
                 except ValueError:  #no value in field
+                    print("", file=sys.stderr)
                     print("warning: no value for {} in field {}. Setting "
                           "scoring threshold to 0\n".format(score_field, \
                           subject, hit.query), file=sys.stderr)
@@ -345,29 +353,32 @@ def main():
                 try:
                     snps = sub_entry[snp_field]
                 except KeyError:
-                    print("error: field {} not found for {} in the relational "
-                          "database".format(snp_field, subject), \
-                          file=sys.stderr)
+                    line_number = b6_reader.current_line
+                    filename = os.path.basename(b6_reader.filename)
+                    print("error: {}, line {!s}: {} has no field named {} in "
+                          "database".format(filename, line_number, subject, 
+                          snp_field), file=sys.stderr)
                     sys.exit(1)
 
                 s_pass = screen_snp(hit, snps, only_snp=only_snp)
 
                 if s_pass:
                     passed_total += 1
-                    out_h(hit.write(default=defaults_only).encode('utf-8'))
+                    write_io(out_h, hit.write(default=defaults_only))
                 else:
                     failed_snp += 1
                     out_d("{}\tSNP screen\n".format(hit.query).encode('utf-8'))
 
             else:
                 passed_total += 1
-                out_h(hit.write(default=defaults_only).encode('utf-8'))
+                write_io(out_h, hit.write(default=defaults_only))
 
         else:
             failed_qual += 1
             out_d("{}\talignment quality\n".format(hit.query).encode('utf-8'))
 
     # Output screening statistics
+    print("", file=sys.stderr)
     print("Alignments processed:", file=sys.stderr)
     print("  - alignment totals:\t{!s}".format(aln_totals), file=sys.stderr)
     print("  - passed screening criteria:\t{!s}".format(passed_total), \
@@ -380,11 +391,11 @@ def main():
     if snp_field:
         print("    - due to secondary SNP screening:\t{!s}".format(failed_snp), \
               file=sys.stderr)
-    print("", file=sys.stderr)
  
     # Calculate and print program run-time
     end_time = time()
     total_time = (end_time - start_time) / 60.0
+    print("", file=sys.stderr)
     print("It took {:.2e} minutes to screen {!s} alignments"\
           .format(total_time, aln_totals), file=sys.stderr)
     print("", file=sys.stderr)
