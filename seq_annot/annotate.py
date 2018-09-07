@@ -335,12 +335,10 @@ def main():
                                 entry.attributes[attr_name] = entry_value
 
         # Add default to product attribute if it doesn't already exist
-        if attr_names['product'] not in entry.attributes and default_product:
-            try:
-                prod_name = attr_names['product']
-            except KeyError:
-                prod_name = 'product'
-            entry.attributes[prod_name] = default_product
+        if default_product:
+            prod_name = attr_names['product']
+            if prod_name not in entry.attributes:
+                entry.attributes[prod_name] = default_product
 
         # Write annotated features to new GFF3 file
         write_io(out_h, entry.write())
