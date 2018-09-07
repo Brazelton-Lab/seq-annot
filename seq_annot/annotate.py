@@ -38,9 +38,9 @@ from __future__ import print_function
 
 from arandomness.argparse import Open, ParseSeparator
 import argparse
-from bio_utils.iterators import b6_iter, gff3_iter
+from bio_utils.iterators import B6Reader, GFF3Reader
 import json
-from seq_annot.seqio import open_io
+from seq_annot.seqio import open_io, write_io
 import sys
 import textwrap
 from time import time
@@ -49,7 +49,7 @@ __author__ = "Christopher Thornton"
 __license__ = 'GPLv3'
 __maintainer__ = 'Christopher Thornton'
 __status__ = "Alpha"
-__version__ = "0.4.0"
+__version__ = "0.4.1"
 
 
 def do_nothing(*args):
@@ -88,6 +88,11 @@ def main():
         default=sys.stdout,
         help="output annotated features in GFF3 format [default: output to "
              "stdout]")
+    parser.add_argument('-i', '--id',
+        dest='id',
+        default='ID',
+        help="attribute name used to match GFF3 entries to B6 query sequences "
+             "[default: ID]")
     parser.add_argument('-s', '--specifiers',
         dest="format",
         action=ParseSeparator,
@@ -104,7 +109,8 @@ def main():
         action=ParseSeparator,
         sep=',',
         help="comma-separated list of fields from the provided relational "
-             "database that should be included as attributes")
+             "database that should be included as attributes. The field "
+             "'Alias' should not be used, as it is reserved for annotation")
     parser.add_argument('-c', '--conflict',
         dest='precedence',
         choices=['order', 'quality'],
@@ -154,14 +160,12 @@ def main():
         version='%(prog)s ' + __version__)
     args = parser.parse_args()
 
-    if (args.fields and not args.map_files) or \
-        (args.map_files and not args.fields):
-        parser.error("error: -m/--mapping and -f/--fields must be supplied "
-                     "together")
+    if args.fields and not args.map_files:
+        parser.error("-m/--mapping must be supplied when -f/--fields is used")
 
     if args.field_alias and not (args.map_files and args.fields):
-        parser.error("error: -m/--mapping and -f/--fields must be supplied "
-                     "when -a/--alias is used")
+        parser.error("-m/--mapping and -f/--fields must be supplied when "
+                     "-a/--alias is used")
 
     # Output run information
     all_args = sys.argv[1:]
@@ -170,41 +174,32 @@ def main():
           .format(' '.join(all_args)), 79), file=sys.stderr)
     print("", file=sys.stderr)
 
+    # Speedup tricks
+    string_type = type(str())
+
     # Track program run-time
     start_time = time()
-
-    # Predefined attribute characters
-    predef_tags = ['protein_id', 'transcript_id', 'pseudogenes', 'pseudo', \
-                   'locus_tag', 'product', 'ec_number', 'mobile_element', \
-                   'mobile_element_type', 'inference'
-                  ]
 
     # Assign variables based on user inputs
     out_h = args.out.write
     out_log = args.log.write if args.log else do_nothing
     out_log("#Kept\tDiscarded\tReason\n".encode('utf-8'))
 
-    map_fields = args.fields if args.fields else []
+    id_attr = args.id
+    map_fields = [i for i in args.fields if i != "Alias"] \
+        if args.fields else []  #Alias is reserved for annotation
+    attr_alias = args.field_alias if args.field_alias else []
     match_precedence = args.precedence
     specifiers = args.format
     default_product = args.prod_def
     feature_type = args.ftype
-    attr_alias = args.field_alias if args.field_alias else []
 
-    no_fields = {}
-    if args.map_files:
-        mapping = {}
+    # Load mappings, if provided
+    mapping = load_dbs(args.map_files) if args.map_files else None
 
-        # Load mapping information
-        for map_file in args.map_files:
-            json_map = json.load(open_io(map_file))
-            mapping = {**json_map, **mapping}
-
-        # Initiate statistics variables
-        for map_field in map_fields:
-            no_fields[map_field] = 0
-    else:
-        mapping = None
+    no_fields = {}  # Mapping-related statistics
+    for map_field in map_fields:
+        no_fields[map_field] = 0
 
     # Dictionary of fields and their respective aliases
     attr_names = {}
@@ -223,10 +218,9 @@ def main():
     dis_totals = 0  #multiple annotations for single query
     hits = {}  #store matches and additional attributes
     for b6 in args.b6:
-
-        with open_io(b6) as b6_h:
-            for hit in b6_iter(b6_h, header=specifiers):
-
+        with open_io(b6) as in_h:
+            b6_reader = B6Reader(in_h)
+            for hit in b6_reader.iterate(header=specifiers):
                 aln_totals += 1
 
                 query = hit.query
@@ -238,20 +232,17 @@ def main():
                         # Preserve only best hit on first come basis
                         out_log("{}\t{}\t{}\n".format(hits[query].subject, \
                                 hit.subject, 'order').encode('utf-8'))
-                        continue
                     else:
                         # Determine which match has the best alignment score
                         prev_score = hits[query].bitscore
 
-                        if prev_score >= hit.bitscore:
+                        if prev_score >= hit.bitscore:  #existing match is best
                             out_log("{}\t{}\t{}\n".format(hits[query].subject, \
                                     hit.subject, 'score').encode('utf-8'))
-                            continue  #existing match is best
                         else:
                             out_log("{}\t{}\t{}\n".format(hit.subject, \
                                     hits[query].subject, 'score').encode('utf-8'))
                             hits[query] = hit
-
                 else:
                     hits[query] = hit
 
@@ -262,9 +253,8 @@ def main():
     no_map = 0  #track hits without an entry in the relational database
     no_id = 0  #track GFF3 entries without ID attribute to link to protein seq
 
-    prev_name = None
-    id_lookup = {}  #track IDs for parent-child reference
-    for entry in gff3_iter(args.gff, parse_attr=True, headers=True):
+    gff_reader = GFF3Reader(args.gff)
+    for entry in gff_reader.iterate(parse_attr=True, headers=True):
         try:
             seq_id = entry.seqid
         except AttributeError:
@@ -277,51 +267,18 @@ def main():
         gff_totals += 1
 
         try:
-            chrom, feature_id = entry.attributes['ID'].rsplit('_', 1)  #id is second
+            feature_id = entry.attributes[id_attr]
         except KeyError:
             no_id += 1
             continue
-        except ValueError:
-            print("error: ID attribute in line {} of the GFF3 file should be of the form "
-                  "<sequenceID>_<featureID>".format(entry.origline), file=sys.stderr)
+
+        if type(feature_id) != string_type:
+            line_number = gff_reader.current_line
+            filename = os.path.basename(gff_reader.filename)
+            print("error: {}, line {!s}: the identifier attribute '{}' cannot "
+                  "have more than one value".format(filename, line_number, \
+                  id_attr), file=sys.stderr)
             sys.exit(1)
-        except AttributeError:
-            chrom, feature_id = entry.attributes['ID'][0].split('_')  #a list
-
-        # Track number features on a given chromosome for updating the ID attr
-        if seq_id == prev_name:
-            seq_count += 1
-        else:
-            seq_count = 1
-            prev_name = seq_id
-
-        # Provide new ID for the feature
-        new_id = "{}_{!s}".format(seq_id, seq_count)
-        old_id = entry.attributes['ID']
-        entry.attributes['ID'] = new_id
-
-        # Store old ID for parent-child reference
-        id_lookup[old_id] = new_id
-
-        # Update Parent attribute if feature is a child
-        if 'Parent' in entry.attributes:
-            try:
-                old_pids = entry.attributes['Parent'].split(',')
-            except AttributeError:
-                old_pids = entry.attributes['Parent']  #already a list
-            new_pids = []
-            for old_pid in old_pids:
-                try:
-                    new_pid = id_lookup[old_pid]
-                except KeyError:
-                    print("error: formatting error in GFF3 file '{}'. Parent "
-                          "features must come before child features in the "
-                          "input GFF3 files".format(file_order[item[0]]), \
-                          file=sys.stderr)
-                    sys.exit(1)
-                new_pids.append(new_pid)
-
-            entry.attributes['Parent'] = ','.join(new_pids)
 
         # Annotate features of a given type only
         if feature_type:
@@ -332,16 +289,16 @@ def main():
             else:
                 ftype_totals += 1
 
-        # clear existing attributes if directed
+        # clear existing attributes, if directed
         if args.clear_attrs:
             for attr in list(entry.attributes.keys()):
-                if not attr[0].isupper() and not attr in predef_tags:
+                if not attr[0].isupper():  #preserve reserved attributes
                     del(entry.attributes[attr])
 
         # Annotate features using attributes field
         try:
-            # Query name should be sequenceID_featureID
-            hit = hits["{}_{}".format(seq_id, feature_id)]
+            # Query name should be same as value in identifier attribute
+            hit = hits[feature_id]
         except KeyError:
             # Discard feature if unable to annotate and flag provided
             if args.filter:
@@ -350,7 +307,7 @@ def main():
             annot_totals += 1
             subject = hit.subject
 
-            attrs = [('Alias', subject)]
+            entry.attributes['Alias'] = subject
             # Include additional information about a hit if a relational 
             # database provided
             if mapping:
@@ -369,10 +326,7 @@ def main():
                             no_fields[field] += 1
                         else:
                             if entry_value:  #entry field might be blank
-                                attrs.append((attr_name, entry_value))
-
-            for attr in attrs:
-                entry.attributes[attr[0]] = attr[1]  #(name, value)
+                                entry.attributes[attr_name] = entry_value
 
         # Add default to product attribute if it doesn't already exist
         if 'product' not in entry.attributes and default_product:
@@ -382,8 +336,8 @@ def main():
                 prod_name = 'product'
             entry.attributes[prod_name] = default_product
 
-        # Write features to new GFF3 file
-        out_h(entry.write().encode('utf-8'))
+        # Write annotated features to new GFF3 file
+        write_io(out_h, entry.write())
 
     # Calculate and print statistics
     if no_map > 0:
@@ -402,6 +356,7 @@ def main():
                   "entry with field '{}' in a mapping file\n"\
                   .format(no_map_size, field), file=sys.stderr)
 
+    print("", file=sys.stderr)
     print("Alignments processed:", file=sys.stderr)
     print("  - alignment totals:\t{!s}".format(aln_totals), file=sys.stderr)
     print("  - discarded due to conflicting annotations:\t{!s}"\
@@ -413,11 +368,11 @@ def main():
               file=sys.stderr)
     print("  - with annotation:\t{!s}".format(annot_totals), \
           file=sys.stderr)
-    print("", file=sys.stderr)
 
     # Calculate and print program run-time
     end_time = time()
     total_time = (end_time - start_time) / 60.0
+    print("", file=sys.stderr)
     print("It took {:.2e} minutes to annotate {!s} features"\
           .format(total_time, gff_totals), file=sys.stderr)
     print("", file=sys.stderr)
