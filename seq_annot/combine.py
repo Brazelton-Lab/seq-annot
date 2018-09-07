@@ -98,16 +98,15 @@ def main():
     print("{} {!s}".format('combine_features', __version__), file=sys.stderr)
     print(textwrap.fill("Command line parameters: {}"\
           .format(' '.join(all_args)), 79), file=sys.stderr)
-    print("", file=sys.stderr)
 
     # Track program run-time
     start_time = time()
 
     # Assign variables
-    out_h = args.out.write
+    out_h = args.out
     out_d = args.discarded.write if args.discarded else do_nothing
 
-    overlap_precedence = args.precedence
+    no_overlaps = args.precedence
     allow_diff_strands = args.stranded
 
     gff_totals = 0
@@ -118,15 +117,15 @@ def main():
     uniques = {}  #store unique features
     file_order = {}
     # Output unique features
-    for position, gff in enumerate(args.gffs):
+    for file_number, gff in enumerate(args.gffs):
         gff_base = os.path.basename(gff)
         ind_totals[gff_base] = 0
-        file_order[position] = gff_base
+        file_order[file_number] = gff_base
 
         with open_io(gff) as gff_h:
             gff_reader = GFF3Reader(gff_h)
 
-            for feature in gff3_reader.iterate():
+            for feature in gff_reader.iterate():
                 try:
                     chrom_id = feature.seqid
                 except AttributeError:
@@ -144,22 +143,15 @@ def main():
                 gff_totals += 1
                 ind_totals[gff_base] += 1
 
-                ident = feature.attributes["ID"]
-
                 try:
                     chrom = uniques[chrom_id]
-                except KeyError:
-                    # First feature encountered at given position always unique
+                except KeyError:  # First feature encountered at given pos
                     p_totals += 1
-                    uniques[chrom_id] = [(position, feature)]
+                    uniques[chrom_id] = [(file_number, feature)]
                     continue
 
-                if overlap_precedence:
+                if no_overlaps:
                     is_unique = True  #assume feature is unique
-
-                    start = feature.start
-                    end = feature.end
-                    strand = feature.strand
 
                     # Check if feature falls within the interval of another
                     for item in chrom:
@@ -167,19 +159,10 @@ def main():
 
                         # Allow overlap for features in the same GFF3 file
                         chrom_pos = item[0]
-                        if position == chrom_pos and args.preserve_within:
+                        if file_number == chrom_pos and args.preserve_within:
                             continue
 
-                        # Allow features to overlap on different strands
-                        chrom_strand = chrom_feat.strand
-                        if allow_diff_strands and ((strand == '.') or \
-                            (strand == '+' and chrom_strand in ['-', '.']) or \
-                            (strand == '-' and chrom_strand in ['+', '.'])):
-                            continue
-
-                        iv_1 = set(range(chrom_feat.start, chrom_feat.end + 1))
-                        iv_2 = set(range(start, end + 1))
-                        if len(iv_1.intersection(iv_2)) > 0:
+                        if feature.overlap(chrom_feat):
                             o_totals += 1
                             is_unique = False
                             break  #found overlap, no need to continue
@@ -188,16 +171,16 @@ def main():
                         # Feature does not fall within the interval of another, so 
                         # add to uniques
                         p_totals += 1
-                        uniques[chrom_id].append((position, feature))
+                        uniques[chrom_id].append((file_number, feature))
                     else:
                         out_d(feature.write().encode('utf-8'))
                 else:
                     p_totals += 1
-                    uniques[chrom_id].append((position, feature))
+                    uniques[chrom_id].append((file_number, feature))
 
     # Output combined GFF3
     header = "##gff-version 3\n"
-    out_h(header.encode('utf-8'))
+    write_io(out_h, header)
 
     id_lookup = {}
     for chrom in sorted(uniques):
@@ -206,50 +189,28 @@ def main():
             chrom_feature += 1
             entry = item[1]
 
-            # Update ID attribute to ensure uniqueness
-            old_ident = entry.attributes['ID']
-            new_ident = '{}_{!s}'.format(entry.seqid, chrom_feature)
-            entry.attributes['ID'] = new_ident
-
-            # Store old ID for parent-child reference
-            id_lookup[old_ident] = new_ident
-
-            # Update Parent attribute if feature is child
-            if 'Parent' in entry.attributes:
-                old_pids = entry.attributes['Parent'].split(',')
-                new_pids = []
-                for old_pid in old_pids:
-                    try:
-                        new_pid = id_lookup[old_pid]
-                    except KeyError:
-                        print("error: formatting error in GFF3 file '{}'. "
-                              "Parent features must come before child features "
-                              "in the input GFF3 files"\
-                              .format(file_order[item[0]]), file=sys.stderr)
-                        sys.exit(1)
-                    new_pids.append(new_pid)
-
-                entry.attributes['Parent'] = ','.join(new_pids)
-
-            out_h(entry.write().encode('utf-8'))
+            write_io(out_h, entry.write())
 
     # Calculate and print statistics
+    print("", file=sys.stderr)
     print("Features processed:", file=sys.stderr)
     print("  - feature totals:\t{!s}".format(gff_totals), file=sys.stderr)
+    print("  - features merged:\t{!s}".format(p_totals), file=sys.stderr)
+    if args.precedence:
+        print("  - overlaps discarded:\t{!s}"\
+              .format(o_totals), file=sys.stderr)
+    print("GFFs processed:", file=sys.stderr)
+    print("  - files combined:\t{!s}".format(len(args.gffs)), file=sys.stderr)
     for gff in ind_totals:
         print("    - features in {}:\t{!s}".format(gff, ind_totals[gff]), \
               file=sys.stderr)
-    print("  - successfully merged:\t{!s}".format(p_totals), file=sys.stderr)
-    if args.precedence:
-        print("  - discarded due to overlapping features:\t{!s}"\
-              .format(o_totals), file=sys.stderr)
-    print("", file=sys.stderr)
 
     # Calculate and print program run-time
     end_time = time()
     total_time = (end_time - start_time) / 60.0
-    print("It took {:.2e} minutes to combine {!s} features"\
-          .format(total_time, gff_totals), file=sys.stderr)
+    print("", file=sys.stderr)
+    print("It took {:.2e} minutes to combine {!s} features from {!s} files"\
+          .format(total_time, gff_totals, len(args.gffs)), file=sys.stderr)
     print("", file=sys.stderr)
 
 
