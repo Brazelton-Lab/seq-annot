@@ -364,14 +364,14 @@ def main():
 
                 if s_pass:
                     passed_total += 1
-                    write_io(out_h, hit.write(default=defaults_only))
+                    write_io(out_h, hit.write(default=default_only))
                 else:
                     failed_snp += 1
                     out_d("{}\tSNP screen\n".format(hit.query).encode('utf-8'))
 
             else:
                 passed_total += 1
-                write_io(out_h, hit.write(default=defaults_only))
+                write_io(out_h, hit.write(default=default_only))
 
         else:
             failed_qual += 1
@@ -381,15 +381,16 @@ def main():
     print("", file=sys.stderr)
     print("Alignments processed:", file=sys.stderr)
     print("  - alignment totals:\t{!s}".format(aln_totals), file=sys.stderr)
-    print("  - passed screening criteria:\t{!s}".format(passed_total), \
-          file=sys.stderr)
-    print("  - failed screening criteria:\t{!s}".format(aln_totals - \
+    print("  - passed screening:", file=sys.stderr)
+    print("    - passed totals:\t{!s}".format(passed_total), file=sys.stderr)
+    print("  - failed screening:", file=sys.stderr)
+    print("    - failed totals:\t{!s}".format(aln_totals - \
           passed_total), file=sys.stderr)
     if e_thresh or len_thresh or id_thresh or score_field:
-        print("    - due to alignment quality:\t{!s}".format(failed_qual), \
+        print("    - from alignment quality:\t{!s}".format(failed_qual), \
               file=sys.stderr)
     if snp_field:
-        print("    - due to secondary SNP screening:\t{!s}".format(failed_snp), \
+        print("    - from secondary SNP screening:\t{!s}".format(failed_snp), \
               file=sys.stderr)
  
     # Calculate and print program run-time
