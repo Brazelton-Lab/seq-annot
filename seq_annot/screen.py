@@ -40,7 +40,7 @@ from __future__ import print_function
 
 from arandomness.argparse import Open, ParseSeparator
 import argparse
-from bio_utils.iterators import b6_iter
+from bio_utils.iterators import B6Reader
 import json
 import re
 import sys
@@ -51,7 +51,7 @@ __author__ = "Christopher Thornton"
 __license__ = 'GPLv3'
 __maintainer__ = 'Christopher Thornton'
 __status__ = "Alpha"
-__version__ = "0.4.2"
+__version__ = "0.4.3"
 
 
 def screen_aln_quality(hit, evalue=10, identity=0, length=0, score=0):
@@ -304,7 +304,8 @@ def main():
     aln_totals = 0  #all alignments in B6 file
 
     prev_hit = ''
-    for hit in b6_iter(args.b6, header=specifiers):
+    b6_reader = B6Reader(args.b6)
+    for hit in b6_reader.iterate(header=specifiers):
         aln_totals += 1
 
         subject = hit.subject
