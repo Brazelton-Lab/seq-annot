@@ -42,7 +42,7 @@ import HTSeq
 import itertools
 import json
 import os
-from seq_annot.seqio import open_io
+from seq_annot.seqio import open_io, write_io
 from statistics import mean
 import sys
 import textwrap
@@ -52,7 +52,7 @@ __author__ = 'Christopher Thornton'
 __license__ = 'GPLv3'
 __maintainer__ = 'Christopher Thornton'
 __status__ = "Beta"
-__version__ = '1.5.2'
+__version__ = '1.5.3'
 
 
 class UnknownChrom(Exception):
@@ -694,7 +694,7 @@ def main():
         # Output abundances sorted by key name
         for fn in sorted(abundances):
             if not fn.startswith("unkwn_"):
-                out_h.write("{}\t{!s}\n".format(fn, abundances[fn]).encode('utf-8'))
+                write_io(out_h, "{}\t{!s}\n".format(fn, abundances[fn]))
 
         out_h.close()
 
