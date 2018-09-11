@@ -126,7 +126,7 @@ def main():
     # Insert new fields into table header, if applicable
     try:
         header = args.abunds.readline().decode('utf-8')
-    except AttributeError:
+    except UnicodeDecodeError:
         header = args.abunds.readline()
 
     header = header.strip().split('\t')
