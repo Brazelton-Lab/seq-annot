@@ -65,7 +65,7 @@ def main():
         help="input one or more relational databases in JSON format")
     parser.add_argument('-o', '--out',
         action=Open,
-        mode='wt',
+        mode='wb',
         default=sys.stdout,
         help="output modified feature abundance table [default: output to "
              "stdout]")
