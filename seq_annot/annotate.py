@@ -305,7 +305,6 @@ def main():
             # Query name should be same as value in identifier attribute
             hit = hits[feature_id]
         except KeyError:
-            no_id += 1
             # Discard feature if unable to annotate and flag provided
             if args.filter:
                 continue
@@ -366,7 +365,7 @@ def main():
     print("", file=sys.stderr)
     print("Alignments processed:", file=sys.stderr)
     print("  - alignment totals:\t{!s}".format(aln_totals), file=sys.stderr)
-    print("  - discarded due to conflicting annotations:\t{!s}"\
+    print("  - conflicting annotations:\t{!s}"\
           .format(dis_totals), file=sys.stderr)
     print("Features processed:", file=sys.stderr)
     print("  - feature totals:\t{!s}".format(gff_totals), file=sys.stderr)
