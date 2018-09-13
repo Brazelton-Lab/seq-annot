@@ -35,7 +35,8 @@ def load_dbs(infiles:list, fields: list=None):
     return(mapping)
 
 
-def filter_dbs(mapping: dict, patterns: list, subset: bool=True):
+def filter_dbs(mapping: dict, patterns: list, subset: bool=True, \
+               case: bool=False):
     """Search for entries in the database matching one or more of the provided
     patterns
 
@@ -43,12 +44,14 @@ def filter_dbs(mapping: dict, patterns: list, subset: bool=True):
         mapping (dict): dictionary containing the relational database entries
             to be filtered
 
-        patterns (list): list of pattern-matching criteria used to filter the 
+        patterns (list): list of pattern matching criteria used to filter the 
             relational database. Each item should be of the form FIELD:PATTERN
 
         subset (bool): keep only those entries with values matching one or more
             of the provided patterns. If False, will only keep those entries 
             that do not match any of the provided patterns
+
+        case (bool): case-sensitive pattern matching [default: False]
 
     Returns:
         dict: filtered relational database
@@ -66,6 +69,9 @@ def filter_dbs(mapping: dict, patterns: list, subset: bool=True):
             print("error: unable to parse search criteria", file=sys.stderr)
             sys.exit(1)
 
+        if not case:
+            regex = regex.lower()
+
         # Combine search patterns from the same field
         if field in merged:
             regex = "{}|{}".format(regex, merged[field])
@@ -78,6 +84,7 @@ def filter_dbs(mapping: dict, patterns: list, subset: bool=True):
     # Filter database using search criteria
     all_entries = list(mapping.keys())
     for entry_id in all_entries:
+        match = False
         foi = set(criteria).intersection(mapping[entry_id])
         for field in foi:
             field_val = mapping[entry_id][field]
@@ -85,6 +92,9 @@ def filter_dbs(mapping: dict, patterns: list, subset: bool=True):
                 field_val = [field_val]
 
             for val in field_val:
+                if not case:
+                    val = val.lower()
+
                 match = criteria[field].search(val)
                 if match:
                     break

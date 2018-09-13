@@ -44,7 +44,7 @@ __author__ = 'Christopher Thornton'
 __license__ = 'GPLv3'
 __maintainer__ = 'Christopher Thornton'
 __status__ = "Alpha"
-__version__ = '0.2.4'
+__version__ = '0.3.3'
 
 
 def main():
@@ -69,6 +69,12 @@ def main():
         default=sys.stdout,
         help="output modified feature abundance table [default: output to "
              "stdout]")
+    parser.add_argument('-c', '--combine',
+        metavar='FIELD',
+        dest='merge_field',
+        help="combine features with matching values in database field. "
+             "Requires that the field already exist in the table or be "
+             "provided in the -i/--insert argument")
     parser.add_argument('-i', '--insert',
         metavar='FIELD [,FIELD,...]',
         dest='input_fields',
@@ -78,25 +84,35 @@ def main():
              "that should be added to the abundance table")
     parser.add_argument('-s', '--subset',
         metavar='FIELD:PATTERN',
-        dest='search_terms',
+        dest='subset_terms',
         action='append',
-        help="pattern-matching criteria used to subset the relational "
+        help="pattern matching criteria used to subset the relational "
              "database. Can provide multiple criteria through repeated use "
              "of the argument. Will separate field from the search pattern on "
              "first encounter of the colon character. Features with field "
-             "value matching the pattern will be returned.")
-    parser.add_argument('--filter',
-        dest='filter',
+             "value matching the pattern will be returned")
+    parser.add_argument('-f', '--filter',
+        metavar='FIELD:PATTERN',
+        dest='filter_terms',
+        action='append',
+        help="pattern matching criteria used to filter the relational "
+             "database. Can provide multiple criteria through repeated use "
+             "of the argument. Will separate field from the search pattern on "
+             "first encounter of the colon character. Features with field "
+             "value matching the pattern will be excluded")
+    parser.add_argument('--case',
+        dest='match_cs',
         action='store_true',
-        help="discard entries ")
+        help="pattern matching should be case-sensitive")
     args = parser.parse_args()
 
-    if not (args.input_fields or args.search_terms):
+    if not (args.input_fields or args.subset_terms):
         parser.error("-m/--mapping must be used with either "
                      "-i/--insert or -f/--filter")
 
     # Speedup trick
     list_type = type(list())
+    str_type = type(str())
 
     # Output run information
     all_args = sys.argv[1:]
@@ -111,22 +127,34 @@ def main():
     # Assign variables based on user input
     out_h = args.out
 
-    add_fields = args.input_fields if args.input_fields else []
-    search_fields = [i.split(':', 1)[0] for i in args.search_terms] \
-                    if args.search_terms else []
+    cs = True if args.match_cs else False
 
-    keep_match = True if not args.filter else False
+    add_fields = args.input_fields if args.input_fields else []
+    subset_fields = [i.split(':', 1)[0] for i in args.subset_terms] \
+                    if args.subset_terms else []
+    filter_fields = [i.split(':', 1)[0] for i in args.filter_terms] \
+                    if args.filter_terms else []
+
+    all_fields = add_fields + subset_fields + filter_fields
 
     # Load databases
-    mapping = load_dbs(args.map_files, fields=add_fields + search_fields)
+    mapping = load_dbs(args.map_files, fields=all_fields)
 
-    # Remove entries from database if values do not match any of the patterns
-    mapping = filter_dbs(mapping, patterns=args.search_terms, subset=keep_match)
+    # Remove entries from database if values do not match any of the subset 
+    # patterns
+    if args.subset_terms:
+        mapping = filter_dbs(mapping, patterns=args.subset_terms, subset=True, 
+                             case=cs)
+
+    # Remove entries from database if values match any of the filter patterns
+    if args.filter_terms:
+        mapping = filter_dbs(mapping, patterns=args.filter_terms, 
+                             subset=False, case=cs)
 
     # Insert new fields into table header, if applicable
     try:
         header = args.abunds.readline().decode('utf-8')
-    except UnicodeDecodeError:
+    except AttributeError:
         header = args.abunds.readline()
 
     header = header.strip().split('\t')
@@ -150,7 +178,7 @@ def main():
 
         # Retain only those feature abundances with corresponding database 
         # entries after database filtering
-        if search_fields:
+        if subset_fields or filter_fields:
             if feature_name not in mapping:
                 continue
 
