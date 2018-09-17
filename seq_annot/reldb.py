@@ -248,3 +248,39 @@ def merge_entries(mapping: dict, entries: list):
             merged[field] = list(set(merged_field))
 
     return merged
+
+
+def entry_as_csv(entry: dict, fields=None, sep='\t'):
+    """Reformat database entry as CSV"
+
+    Args:
+        entry (dict): dictionary entry from the relational database
+
+        fields (list): list of fields to include in the output
+
+    Returns:
+        str: entry reformatted as CSV string
+    """
+    list_type = type(list())
+
+    if not fields:
+        add_fields = sorted(entry.keys())
+    else:
+        add_fields = fields
+
+    context_values = []
+    for field in add_fields:
+        try:
+            field_val = entry[field]
+        except KeyError:  # Feature or entry field not in database
+            field_val = 'NA'
+
+        if type(field_val) == list_type:  # Attribute has multiple values
+            field_val = ';'.join(field_val)
+
+        if not field_val:
+            field_val = 'NA'
+
+        context_values.append(field_val)
+
+    return sep.join(context_values)
