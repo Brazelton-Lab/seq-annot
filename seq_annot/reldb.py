@@ -66,7 +66,8 @@ def filter_dbs(mapping: dict, patterns: list, subset: bool=True, \
         try:
             field, regex = pattern.split(':', 1)
         except ValueError:
-            print("error: unable to parse search criteria", file=sys.stderr)
+            print("error: unable to parse search criteria {}".format(pattern), 
+                  file=sys.stderr)
             sys.exit(1)
 
         if not case:
