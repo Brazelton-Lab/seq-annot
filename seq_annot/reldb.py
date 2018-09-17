@@ -153,9 +153,8 @@ def derep_by_field(mapping: dict, field: str):
     """
     reverse_map = {}
     for entry in mapping:
-        try:
-            rep = mapping[entry][field]
-        except KeyError:
+        rep = get_value_str(mapping[entry], field)
+        if rep == 'NA':
             print("error: field '{}' not found in the combined relational "
                   "database for entry '{}'".format(field, entry), \
                   file=sys.stderr)
