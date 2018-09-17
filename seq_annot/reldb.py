@@ -261,8 +261,6 @@ def entry_as_csv(entry: dict, fields=None, sep='\t'):
     Returns:
         str: entry reformatted as CSV string
     """
-    list_type = type(list())
-
     if not fields:
         add_fields = sorted(entry.keys())
     else:
@@ -270,17 +268,35 @@ def entry_as_csv(entry: dict, fields=None, sep='\t'):
 
     context_values = []
     for field in add_fields:
-        try:
-            field_val = entry[field]
-        except KeyError:  # Feature or entry field not in database
-            field_val = 'NA'
-
-        if type(field_val) == list_type:  # Attribute has multiple values
-            field_val = ';'.join(field_val)
-
-        if not field_val:
-            field_val = 'NA'
+        field_val = get_value_str(entry, field)
 
         context_values.append(field_val)
 
     return sep.join(context_values)
+
+
+def get_value_str(entry: dict, field: str):
+    """Output an entries field value as a string
+
+    Args:
+        entry (dict): dictionary entry from the relational database
+
+        field (str): field to extract value string from
+
+    Returns:
+        str: entry field value formatted as a string
+    """
+    list_type = type(list())
+
+    try:
+        field_val = entry[field]
+    except KeyError:  # Feature or entry field not in database
+        field_val = 'NA'
+
+    if type(field_val) == list_type:  # Attribute has multiple values
+        field_val = ';'.join(field_val)
+
+    if not field_val:
+        field_val = 'NA'
+
+    return field_val

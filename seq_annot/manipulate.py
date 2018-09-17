@@ -47,7 +47,7 @@ __author__ = 'Christopher Thornton'
 __license__ = 'GPLv3'
 __maintainer__ = 'Christopher Thornton'
 __status__ = "Alpha"
-__version__ = '0.4.2'
+__version__ = '0.4.3'
 
 
 def combine_rows(r1: list, r2: list):
@@ -232,10 +232,7 @@ def main():
 
         # Output row or merge based on field value
         if merge_field != None:
-            try:
-                field_val = mapping[feature_name][merge_field]
-            except KeyError:
-                field_val = "NA"
+            field_val = get_value_str(mapping[feature_name], merge_field)
 
             try:
                 counts = list(map(float, split_row[1:]))
