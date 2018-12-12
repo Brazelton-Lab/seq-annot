@@ -49,7 +49,7 @@ __author__ = "Christopher Thornton"
 __license__ = 'GPLv3'
 __maintainer__ = 'Christopher Thornton'
 __status__ = "Alpha"
-__version__ = "0.4.2"
+__version__ = "0.4.3"
 
 
 def do_nothing(*args):
@@ -359,7 +359,7 @@ def main():
             print("", file=sys.stderr)
             print("warning: there were {!s} alignments that did not have an "
                   "entry with field '{}' in a mapping file"\
-                  .format(no_map_size, field), file=sys.stderr)
+                  .format(no_map_size, map_field), file=sys.stderr)
 
     print("", file=sys.stderr)
     print("Alignments processed:", file=sys.stderr)
