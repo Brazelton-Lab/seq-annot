@@ -5,10 +5,9 @@ homology search to a database of genes with known or predicted function.
 
 Required input is a GFF3 file of predicted protein-coding genes and a tabular 
 file of pairwise alignments (B6 format). Optional input is a relational 
-database in JSON format containing additional information on a hit. It is 
-assumed that the query IDs in the alignment file are the sequence IDs in the 
-GFF3 file combined with the second part of the ID tag, separated by an 
-underscore.
+database in JSON format containing additional information on a hit. The query 
+IDs (first column) in the B6 file must match their corresponding value in 
+the ID attribute of the GFF.
 
 The compression algorithm is automatically detected for input files based on 
 the file extension. To compress output, add the appropriate file extension to 
@@ -50,7 +49,7 @@ __author__ = "Christopher Thornton"
 __license__ = 'GPLv3'
 __maintainer__ = 'Christopher Thornton'
 __status__ = "Alpha"
-__version__ = "0.4.1"
+__version__ = "0.4.2"
 
 
 def do_nothing(*args):
