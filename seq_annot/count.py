@@ -52,7 +52,7 @@ __author__ = 'Christopher Thornton'
 __license__ = 'GPLv3'
 __maintainer__ = 'Christopher Thornton'
 __status__ = "Beta"
-__version__ = '1.5.3'
+__version__ = '1.5.4'
 
 
 class UnknownChrom(Exception):
@@ -614,18 +614,29 @@ def main():
             norm_method = scale_abundance_fpkm
             # Scaling factor is all mapped reads
             scaling_factor = nmapped
+            print("info: the total number of mapped reads used in calculation "
+                  "of FPKM is {!s}.\n".format(nmapped), file=sys.stderr)
         elif unit == 'tpm':
             norm_method = scale_abundance_tpm
             rates = [counts[j]['count'] / counts[j]['length'] for j in counts]
+            print("info: the sum of all counts per bp rates used in "
+                  "estimating fragment proportions is {!s}.\n".format(rates), \
+                  file=sys.stderr)
             # Scaling factor is sum of all reads per base rates
             scaling_factor = sum(rates)
         elif unit == 'custom':
             norm_method = scale_abundance_prop
             rates = [counts[j]['count'] / counts[j]['length'] for j in counts]
+            print("info: the sum of all counts per bp rates used in "
+                  "estimating fragment proportions is {!s}.\n".format(rates), \
+                  file=sys.stderr)
             scaling_factor = args.sfactor / sum(rates)
         elif unit == 'prop':
             norm_method = scale_abundance_prop
             rates = [counts[j]['count'] / counts[j]['length'] for j in counts]
+            print("info: the sum of all counts per bp rates used in "
+                  "estimating fragment proportions is {!s}.\n".format(rates), \
+                  file=sys.stderr)
             scaling_factor = 1 / sum(rates)
         else:  #default is counts
             norm_method = scale_abundance_none
