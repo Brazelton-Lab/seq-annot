@@ -619,25 +619,28 @@ def main():
         elif unit == 'tpm':
             norm_method = scale_abundance_tpm
             rates = [counts[j]['count'] / counts[j]['length'] for j in counts]
+            rate_sum = sum(rates)
             print("info: the sum of all counts per bp rates used in "
-                  "estimating fragment proportions is {!s}.\n".format(rates), \
-                  file=sys.stderr)
+                    "estimating fragment proportions is {:.2f}.\n"\
+                  .format(rate_sum), file=sys.stderr)
             # Scaling factor is sum of all reads per base rates
-            scaling_factor = sum(rates)
+            scaling_factor = rate_sum
         elif unit == 'custom':
             norm_method = scale_abundance_prop
             rates = [counts[j]['count'] / counts[j]['length'] for j in counts]
+            rate_sum = sum(rates)
             print("info: the sum of all counts per bp rates used in "
-                  "estimating fragment proportions is {!s}.\n".format(rates), \
-                  file=sys.stderr)
-            scaling_factor = args.sfactor / sum(rates)
+                    "estimating fragment proportions is {:.2f}.\n"\
+                  .format(rate_sum), file=sys.stderr)
+            scaling_factor = args.sfactor / rate_sum
         elif unit == 'prop':
             norm_method = scale_abundance_prop
             rates = [counts[j]['count'] / counts[j]['length'] for j in counts]
+            rate_sum = sum(rates)
             print("info: the sum of all counts per bp rates used in "
-                  "estimating fragment proportions is {!s}.\n".format(rates), \
-                  file=sys.stderr)
-            scaling_factor = 1 / sum(rates)
+                    "estimating fragment proportions is {:.2f}.\n"\
+                  .format(rate_sum), file=sys.stderr)
+            scaling_factor = 1 / rate_sum
         else:  #default is counts
             norm_method = scale_abundance_none
             scaling_factor = None
