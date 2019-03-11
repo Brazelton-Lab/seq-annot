@@ -605,7 +605,7 @@ def main():
                       duplicate
     nmapped = aln_totals + empty + ambiguous + nonunique + lowqual
 
-    for unit in args.norm:
+    for unit in out_handles:
         # Set scaling function
         if unit == 'fpk':
             norm_method = scale_abundance_fpk
