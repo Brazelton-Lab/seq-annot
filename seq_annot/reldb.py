@@ -292,6 +292,8 @@ def get_value_str(entry: dict, field: str):
         field_val = entry[field]
     except KeyError:  # Feature or entry field not in database
         field_val = 'NA'
+    except TypeError:  # database not formatted correctly
+        field_val = 'NA'
 
     if type(field_val) == list_type:  # Attribute has multiple values
         field_val = ';'.join(field_val)
