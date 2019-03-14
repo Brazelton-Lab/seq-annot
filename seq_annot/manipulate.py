@@ -109,13 +109,13 @@ def main():
         metavar='out.csv',
         action=Open,
         mode='wb',
-        help="output accompanying contextual information from relational "
-             "database. Can be used with -a/--fields to specify which fields"
-             "in the database to include in the output")
+        help="output table of accompanying contextual information from the "
+             "database provided to --mapping. Can be used with -a/--fields "
+             "to specify which content to include in the output")
     parser.add_argument('-c', '--combine',
         metavar='FIELD',
         dest='merge_field',
-        help="combine features with shared values in the database field")
+        help="combine features with shared values in the field provided")
     parser.add_argument('-a', '--fields',
         metavar='FIELD [,FIELD,...]',
         dest='input_fields',
@@ -153,8 +153,10 @@ def main():
         parser.error("-m/--mapping must be used with one or more of "
                      "-c/--combine, -d/--db, -s/--subset, or -f/--filter")
 
-    if args.db and not args.input_fields:
-        parser.error("-d/--db should be used -a/--fields")
+    if (args.db and not args.input_fields) or (args.input_fields and not \
+                                               args.db):
+        parser.error("the arguments -d/--db and -a/--fields must be used "
+                     "together")
 
     # Output run information
     all_args = sys.argv[1:]
