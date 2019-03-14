@@ -8,6 +8,15 @@ from lzma import LZMAFile
 import io
 import sys
 
+
+class FormatError(Exception):
+    """A simple exception that is raised when an input file is formatted
+    incorrectly
+    """
+    def __init__(self,*args,**kwargs):
+        Exception.__init__(self,*args,**kwargs)
+
+
 def open_io(infile, **kwargs):
     """Open input files based on file extension for reading or writing
     """

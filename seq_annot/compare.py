@@ -37,7 +37,7 @@ import argparse
 import json
 import os
 from seq_annot.reldb import load_dbs
-from seq_annot.seqio import open_io, write_io
+from seq_annot.seqio import open_io, write_io, FormatError
 import sys
 import textwrap
 from time import time
