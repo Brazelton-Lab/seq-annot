@@ -234,7 +234,13 @@ def main():
 
         # Output row or merge based on field value
         if merge_field != None:
-            field_val = get_value_str(mapping[feature_name], merge_field)
+            try:
+                field_val = get_value_str(mapping[feature_name], merge_field)
+            except KeyError:
+                print("warning: database does not contain an entry for {} on "
+                "line {!s}. This feature will be included in the combined "
+                "output".format(feature_name, line_pos), file=sys.stderr)
+                continue
 
             try:
                 counts = list(map(float, split_row[1:]))

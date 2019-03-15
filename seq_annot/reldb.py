@@ -153,11 +153,12 @@ def derep_by_field(mapping: dict, field: str):
         dict: dereplicated relational database
     """
     reverse_map = {}
-    for entry in mapping:
+    for entry_id in mapping:
+        entry = mapping[entry]
         rep = get_value_str(entry, field)
         if rep == 'NA':
             print("error: field '{}' not found in the combined relational "
-                  "database for entry '{}'".format(field, entry), \
+                  "database for entry '{}'".format(field, entry_id), \
                   file=sys.stderr)
             continue
 
@@ -166,8 +167,8 @@ def derep_by_field(mapping: dict, field: str):
         except KeyError:
             reverse_map[rep] = [entry]
 
-    for rep in reverse_map:
-        entries = reverse_map[rep]
+    for rep_id in reverse_map:
+        entries = reverse_map[rep_id]
         if len(entries) > 1:  #found replicates
             merged = merge_entries(mapping, entries)
         else:  #no replicates
@@ -293,7 +294,8 @@ def get_value_str(entry: dict, field: str):
     except KeyError:  # Feature or entry field not in database
         field_val = 'NA'
     except TypeError:  # database not formatted correctly
-        field_val = 'NA'
+        print("error: dont know what to do with entry {} and field {}".format(entry, field), file=sys.stderr)
+        sys.exit(1)
 
     if type(field_val) == list_type:  # Attribute has multiple values
         field_val = ';'.join(field_val)
