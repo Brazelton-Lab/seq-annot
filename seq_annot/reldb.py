@@ -1,306 +1,212 @@
 #! /usr/bin/env python
-"""Functions for manipulating the relational databases
+"""
+Perform various manipulations on one or more relational databases, including: 
+entry merging, database subsetting, and format conversion.
+
+Usage:
+    reldbs in.json [in.json ...]
+
+Required input is one or more JSON-formatted database files.
+
+The compression algorithm is automatically detected for input files based on
+the file extension. To compress output, add the appropriate file extension
+to the output file name (e.g. .gz, .bz2).
+
+Copyright:
+
+    reldbs manipulate relational databases and database entries
+    Copyright (C) 2016  William Brazelton
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <http://www.gnu.org/licenses/>.
 """
 
+from arandomness.argparse import Open, ParseSeparator
+import argparse
 import json
-import re
-from seq_annot.seqio import open_io, write_io
+import os
+import seq_annot.db
+from seq_annot.seqio import open_io
 import sys
+import textwrap
+from time import time
+
+__author__ = 'Christopher Thornton'
+__license__ = 'GPLv3'
+__maintainer__ = 'Christopher Thornton'
+__status__ = "Alpha"
+__version__ = '0.4.0'
 
 
-def load_dbs(infiles:list, fields: list=None):
-    """Load relational databases into memory
+def main():
+    parser = argparse.ArgumentParser(description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument('map_files',
+        metavar='in.json [in.json ...]',
+        nargs='+',
+        help="input one or more relational databases in JSON format")
+    parser.add_argument('-o', '--out',
+        action=Open,
+        mode='wt',
+        default=sys.stdout,
+        help="output modified relational database [default: output to stdout]")
+    output_group = parser.add_argument_group("output control arguments")
+    output_group.add_argument('-f', '--fields',
+        metavar='FIELD [,FIELD,...]',
+        action=ParseSeparator,
+        sep=',',
+        help="comma-separated list of fields from the relational database to "
+             "be included in the output")
+    output_group.add_argument('--csv',
+        action='store_true',
+        help="output database as tabular CSV")
+    merge_group = parser.add_argument_group("entry merging arguments")
+    derep_group = merge_group.add_mutually_exclusive_group()
+    derep_group.add_argument('-c', '--dup-file',
+        metavar='in.tsv',
+        dest='dup_file',
+        action=Open,
+        mode='rt',
+        help="input tab-separated file of database entries to merge. The "
+             "input relational databases should be provided as columns "
+             "and entries to merge between databases as rows. Lines starting "
+             "with '#' will be ignored.")
+    derep_group.add_argument('-d', '--dup-field',
+        metavar='FIELD',
+        dest='dup_field',
+        help="database field by which entries should be merged. The content "
+             "of the entries with matching values in this field will be "
+             "combined across all relational databases input")
+    subset_group = parser.add_argument_group("subsetting arguments")
+    subset_group.add_argument('-i', '--ids',
+        metavar='ID [,ID,...]',
+        action=ParseSeparator,
+        sep=',',
+        help="comma-separated list of database entry IDs. Only IDs "
+             "in the list will be output [default: output all]")
+    subset_group.add_argument('-s', '--subset',
+        metavar='FIELD:PATTERN',
+        dest='subset_terms',
+        action='append',
+        help="pattern matching criteria used to extract entries from the "
+             "database. Can provide multiple criteria through repeated use "
+             "of the argument. The field tag is distinguished from the search "
+             "pattern by the first colon character encountered. Entries with "
+             "field value matching the pattern will be included in the output")
+    subset_group.add_argument('-r', '--filter',
+        metavar='FIELD:PATTERN',
+        dest='filter_terms',
+        action='append',
+        help="pattern matching criteria used to filter entries from the "
+             "database. Can provide multiple criteria through repeated use "
+             "of the argument. The field tag is distinguished from the search "
+             "pattern by the first colon character encountered. Features with "
+             "field value matching the pattern will be excluded from the "
+             "output")
+    subset_group.add_argument('--case',
+        dest='match_cs',
+        action='store_true',
+        help="pattern matching should be case-sensitive [default: "
+             "pattern matching is case-insensitive]")
+    parser.add_argument('--version',
+        action='version',
+        version='%(prog)s ' + __version__)
+    args = parser.parse_args()
 
-    Args:
-        infiles (list): list of input relational databases in JSON format
+    # Output run information
+    all_args = sys.argv[1:]
+    print("{} {!s}".format('reldbs', __version__), file=sys.stderr)
+    print(textwrap.fill("Command line parameters: {}"\
+          .format(' '.join(all_args)), 79), file=sys.stderr)
+    print("", file=sys.stderr)
 
-        fields (list): list of fields to load [default: load all]
+    # Track program run-time
+    start_time = time()
 
-    Returns:
-        dict: relational database loaded as a dictionary
-    """
+    # Assign variables based on user input
+    out_h = args.out
+    as_csv = args.csv
 
-    mapping = {}
-    for map_file in infiles:
-        json_map = json.load(open_io(map_file))
-        if fields:
-            for item in json_map:
-                entry = json_map[item]
-                entry = {k: entry[k] for k in entry.keys() & set(fields)}
+    ids = args.ids
 
-                mapping[item] = entry
-        else:
-            mapping = {**json_map, **mapping}
+    cs = True if args.match_cs else False
 
-    return(mapping)
+    merge_field = [args.dup_field] if args.dup_field else []
+    output_fields = args.fields if args.fields else []
+    subset_fields = [i.split(':', 1)[0] for i in args.subset_terms] \
+                    if args.subset_terms else []
+    filter_fields = [i.split(':', 1)[0] for i in args.filter_terms] \
+                    if args.filter_terms else []
 
+    all_fields = output_fields + subset_fields + filter_fields + merge_field
 
-def filter_dbs(mapping: dict, patterns: list, subset: bool=True, \
-               case: bool=False):
-    """Search for entries in the database matching one or more of the provided
-    patterns
+    merge = True if (args.dup_field or args.dup_file) else False
 
-    Args:
-        mapping (dict): dictionary containing the relational database entries
-            to be filtered
-
-        patterns (list): list of pattern matching criteria used to filter the 
-            relational database. Each item should be of the form FIELD:PATTERN
-
-        subset (bool): keep only those entries with values matching one or more
-            of the provided patterns. If False, will only keep those entries 
-            that do not match any of the provided patterns
-
-        case (bool): case-sensitive pattern matching [default: False]
-
-    Returns:
-        dict: filtered relational database
-    """
-
-    # Speedup trick
-    list_type = type(list())
-
-    # Create dictionary for pattern-matching
-    merged = {}
-    for pattern in patterns:
-        try:
-            field, regex = pattern.split(':', 1)
-        except ValueError:
-            print("error: unable to parse search criteria {}".format(pattern), 
-                  file=sys.stderr)
-            sys.exit(1)
-
-        if not case:
-            regex = regex.lower()
-
-        # Combine search patterns from the same field
-        if field in merged:
-            regex = "{}|{}".format(regex, merged[field])
-
-        merged[field] = regex
-
-    # Compile regular expressions
-    criteria = {j: re.compile(k) for j, k in merged.items()}
-
-    # Filter database using search criteria
-    all_entries = list(mapping.keys())
-    for entry_id in all_entries:
-        match = False
-        foi = set(criteria).intersection(mapping[entry_id])
-        for field in foi:
-            field_val = mapping[entry_id][field]
-            if type(field_val) != list_type:
-                field_val = [field_val]
-
-            for val in field_val:
-                if not case:
-                    val = val.lower()
-
-                match = criteria[field].search(val)
-                if match:
-                    break
-
-            if match:
-                break
-
-        if not match and subset:
-            del mapping[entry_id]
-        elif match and not subset:
-            del mapping[entry_id]
-
-    return(mapping)
-
-
-def derep_by_file(mapping: dict, inhandle):
-    """Use input file to direct which entries should be combined into a 
-    single entry
-
-    Args:
-        mapping (dict): dictionary containing the relational database entries
-            to be dereplicated
-
-        inhandle (filehandle): tab-separated file specifying which database 
-            entries to combine
-
-    Returns:
-        dict: dereplicated relational database
-    """
-    for line in inhandle:
-        if line.startswith('#'):
-                continue
-
-        split_line = line.strip().split('\t')
-
-        # Combine entries from multiple databases
-        merged = merge_entries(mapping, split_line)
-
-        # Update database entries with combined information
-        for entry in split_line:
-            mapping[entry] = merged
-
-    return(mapping)
-
-
-def derep_by_field(mapping: dict, field: str):
-    """Merge entries sharing the same field value
-    Args:
-        mapping (dict): dictionary containing the relational database entries
-            to be dereplicated
-
-        field (str): database field through which entries should be combined
-
-    Returns:
-        dict: dereplicated relational database
-    """
-    reverse_map = {}
-    for entry_id in mapping:
-        entry = mapping[entry]
-        rep = get_value_str(entry, field)
-        if rep == 'NA':
-            print("error: field '{}' not found in the combined relational "
-                  "database for entry '{}'".format(field, entry_id), \
-                  file=sys.stderr)
-            continue
-
-        try:
-            reverse_map[rep].append(entry)
-        except KeyError:
-            reverse_map[rep] = [entry]
-
-    for rep_id in reverse_map:
-        entries = reverse_map[rep_id]
-        if len(entries) > 1:  #found replicates
-            merged = merge_entries(mapping, entries)
-        else:  #no replicates
-            merged = mapping[entries[0]]
-
-        # Reduce memory usage by removing entries from mapping
-        for entry in entries:
-            del(mapping[entry])
-
-        del(merged[field])  #replicate field is now entry ID, so remove
-        mapping[rep] = merged
-
-    return(mapping)
-
-def merge_entries(mapping: dict, entries: list):
-    """Merge entries in a relational database
-    Args:
-        mapping (dict): dictionary containing the relational database
-
-        entries (list): list of entries in database to combine together
-
-    Returns:
-        dict: new entry created by combining the fields of all entries in the 
-            entries list
-    """
-    list_type = type(list())
-
-    merged = {}
-    for entry_id in entries:
-        try:
-            entry = mapping[entry_id]
-        except KeyError:
-            print("warning: entry '{}' not found in the combined "
-                  "relational database".format(entry_id), file=sys.stderr)
-            continue
-
-        for field in entry:
-            try:
-                entry_value = entry[field]
-            except KeyError:
-                continue
-            else:
-                entry_type = type(entry_value)
-
-            try:
-                merged_value = merged[field]
-            except KeyError:
-                merged[field] = entry_value
-                continue
-            else:
-                merged_type = type(merged_value)
-
-            if entry_value and not merged_value:
-                merged[field] = entry_value
-                continue
-            elif (merged_value and not entry_value) \
-                or not (entry_value and merged_value):
-                continue
-
-            if entry_type == list_type and merged_type == list_type:
-                merged_field = entry_value + merged_value
-            elif entry_type == list_type and merged_type != list_type:
-                entry_value.append(merged_value)
-                merged_field = entry_value
-            elif merged_type == list_type and entry_type != list_type:
-                merged_value.append(entry_value)
-                merged_field = merged_value
-            else:
-                if str(entry_value) in str(merged_value):
-                    merged[field] = merged_value
-                    continue
-                elif str(merged_value) in str(entry_value):
-                    merged[field] = entry_value
-                    continue
-                else:
-                    merged_field = [entry_value, merged_value]
-
-            merged[field] = list(set(merged_field))
-
-    return merged
-
-
-def entry_as_csv(entry: dict, fields=None, sep='\t'):
-    """Reformat database entry as CSV"
-
-    Args:
-        entry (dict): dictionary entry from the relational database
-
-        fields (list): list of fields to include in the output
-
-    Returns:
-        str: entry reformatted as CSV string
-    """
-    if not fields:
-        add_fields = sorted(entry.keys())
+    if args.dup_file:
+        derep_algo = db.derep_by_file
+        by = args.dup_file
     else:
-        add_fields = fields
+        derep_algo = db.derep_by_field
+        by = args.dup_field
 
-    context_values = []
-    for field in add_fields:
-        field_val = get_value_str(entry, field)
+    # Load databases
+    mapping = load_dbs(args.map_files, fields=all_fields)
 
-        context_values.append(field_val)
+    # Keep only entries in list of IDs supplied by user
+    unwanted = set(mapping.keys()) - set(ids)
+    for unwanted_key in unwanted:
+        del mapping[unwanted_key]
 
-    return sep.join(context_values)
-
-
-def get_value_str(entry: dict, field: str):
-    """Output an entries field value as a string
-
-    Args:
-        entry (dict): dictionary entry from the relational database
-
-        field (str): field to extract value string from
-
-    Returns:
-        str: entry field value formatted as a string
-    """
-    list_type = type(list())
-
-    try:
-        field_val = entry[field]
-    except KeyError:  # Feature or entry field not in database
-        field_val = 'NA'
-    except TypeError:  # database not formatted correctly
-        print("error: dont know what to do with entry {} and field {}".format(entry, field), file=sys.stderr)
+    if not len(mapping) > 0:
+        print("error: database contains no matching entries with the list of "
+            "supplied IDs", file=sys.stderr)
         sys.exit(1)
 
-    if type(field_val) == list_type:  # Attribute has multiple values
-        field_val = ';'.join(field_val)
+    # Remove entries from database if values do not match any of the subset
+    # patterns
+    if args.subset_terms:
+        mapping = db.filter_dbs(mapping, patterns=args.subset_terms, 
+            subset=True, case=cs)
 
-    if not field_val:
-        field_val = 'NA'
+    # Remove entries from database if values match any of the filter patterns
+    if args.filter_terms:
+        mapping = db.filter_dbs(mapping, patterns=args.filter_terms,
+                             subset=False, case=cs)
 
-    return field_val
+    # Merge database entries by field or file
+    if merge:
+        mapping = derep_algo(mapping, by)
+
+    # Output modified database
+    if as_csv:
+        # Output CSV header
+        header = "#ID\t{}\n".format("\t".join(output_fields))
+        write_io(out_h, header)
+
+        for entry in mapping:
+            write_io(out_h, db.entry_as_csv(entry, output_fields))
+    else:
+        json.dump(mapping, out_h, sort_keys=True, indent=4, \
+            separators=(',', ': '))
+
+    # Calculate and print program run-time info
+    end_time = time()
+    total_time = (end_time - start_time) / 60.0
+    print("It took {:.2e} minutes to merge {!s} entries"\
+          .format(total_time, len(mapping)), file=sys.stderr)
+    print("", file=sys.stderr)
+
+
+if __name__ == "__main__":
+    main()
+    sys.exit(0)
