@@ -60,17 +60,7 @@ def main():
         mode='wt',
         default=sys.stdout,
         help="output modified relational database [default: output to stdout]")
-    output_group = parser.add_argument_group("output control arguments")
-    output_group.add_argument('-f', '--fields',
-        metavar='FIELD [,FIELD,...]',
-        action=ParseSeparator,
-        sep=',',
-        help="comma-separated list of fields from the relational database to "
-             "be included in the output")
-    output_group.add_argument('--csv',
-        action='store_true',
-        help="output database as tabular CSV")
-    merge_group = parser.add_argument_group("entry merging arguments")
+    merge_group = parser.add_argument_group("merging arguments")
     derep_group = merge_group.add_mutually_exclusive_group()
     derep_group.add_argument('-c', '--dup-file',
         metavar='in.tsv',
@@ -118,6 +108,16 @@ def main():
         action='store_true',
         help="pattern matching should be case-sensitive [default: "
              "pattern matching is case-insensitive]")
+    output_group = parser.add_argument_group("output control arguments")
+    output_group.add_argument('-f', '--fields',
+        metavar='FIELD [,FIELD,...]',
+        action=ParseSeparator,
+        sep=',',
+        help="comma-separated list of fields from the relational database to "
+             "be included in the output")
+    output_group.add_argument('--csv',
+        action='store_true',
+        help="output database as tabular CSV")
     parser.add_argument('--version',
         action='version',
         version='%(prog)s ' + __version__)
