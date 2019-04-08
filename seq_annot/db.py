@@ -148,34 +148,39 @@ def derep_by_field(mapping: dict, field: str):
     Returns:
         dict: dereplicated relational database
     """
+    novalue = 0
+
     reverse_map = {}
     for entry_id in mapping:
         entry = mapping[entry_id]
-        rep = get_value_str(entry, field)
-        if rep == 'NA':
-            print("error: field '{}' not found in the combined relational "
-                  "database for entry '{}'".format(field, entry_id), \
-                  file=sys.stderr)
+        field_value = get_value_str(entry, field)
+
+        if field_value == 'NA':
+            novalue += 1
             continue
 
         try:
-            reverse_map[rep].append(entry)
+            reverse_map[field_value].append(entry_id)
         except KeyError:
-            reverse_map[rep] = [entry]
+            reverse_map[field_value] = [entry_id]
 
-    for rep_id in reverse_map:
-        entries = reverse_map[rep_id]
-        if len(entries) > 1:  #found replicates
-            merged = merge_entries(mapping, entries)
+    for field_id in reverse_map:
+        entry_ids = reverse_map[field_id]
+        if len(entry_ids) > 1:  #found replicates
+            merged = merge_entries(mapping, entry_ids)
         else:  #no replicates
-            merged = mapping[entries[0]]
+            merged = mapping[entry_ids[0]]
 
         # Reduce memory usage by removing entries from mapping
-        for entry in entries:
-            del(mapping[entry])
+        for entry_id in entry_ids:
+            del(mapping[entry_id])
 
         del(merged[field])  #replicate field is now entry ID, so remove
-        mapping[rep] = merged
+        mapping[field_id] = merged
+    
+    if novalue:
+        print("warning: there were {} entries with no value for field {}"\
+            .format(novalue, field), file=sys.stderr)
 
     return(mapping)
 
@@ -184,7 +189,8 @@ def merge_entries(mapping: dict, entries: list):
     Args:
         mapping (dict): dictionary containing the relational database
 
-        entries (list): list of entries in database to combine together
+        entries (list): list of entry IDs contained within the database that 
+            should be merged
 
     Returns:
         dict: new entry created by combining the fields of all entries in the 
@@ -246,10 +252,12 @@ def merge_entries(mapping: dict, entries: list):
 
     return merged
 
-def entry_as_csv(entry: dict, fields=None, sep='\t'):
+def entry_as_csv(ident: str, entry: dict, fields=None, sep='\t'):
     """Reformat database entry as CSV"
 
     Args:
+        ident (str): entry ID
+
         entry (dict): dictionary entry from the relational database
 
         fields (list): list of fields to include in the output
@@ -262,13 +270,13 @@ def entry_as_csv(entry: dict, fields=None, sep='\t'):
     else:
         add_fields = fields
 
-    context_values = []
+    field_values = [ident]
     for field in add_fields:
         field_val = get_value_str(entry, field)
 
-        context_values.append(field_val)
+        field_values.append(field_val)
 
-    return sep.join(context_values)
+    return sep.join(field_values)
 
 def get_value_str(entry: dict, field: str):
     """Output an entries field value as a string
