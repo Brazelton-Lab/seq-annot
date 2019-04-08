@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-Estimate the abundances of genomic features.
+Estimate abundance for genomic features.
 
 Required inputs are a GFF3 file of annotated features and an alignments file 
 in SAM or BAM format. Optional input is one or more relational databases 
@@ -11,8 +11,8 @@ of estimated feature abundances.
 
 The compression algorithm is automatically detected for input files based on 
 the file extension. To compress output, provide the appropriate flag based on 
-the desired compression algorithm. The alignments file will be taken from 
-standard input (stdin) if '-' is supplied in place of a file name.
+the desired compression algorithm. Standard input (stdin) can be redirected to 
+one of the positional arguments if supplied with '-'.
 
 Copyright:
 
@@ -52,7 +52,7 @@ __author__ = 'Christopher Thornton'
 __license__ = 'GPLv3'
 __maintainer__ = 'Christopher Thornton'
 __status__ = "Beta"
-__version__ = '1.5.4'
+__version__ = '1.5.6'
 
 
 class UnknownChrom(Exception):
@@ -167,7 +167,8 @@ def main():
              "that input should be taken from standard input (stdin)")
     parser.add_argument('feature_file',
         metavar='in.gff3',
-        help="input feature annotation file in GFF3 format")
+        help="input feature annotation file in GFF3 format. Use '-' to indicate "
+             "that input should be taken from standard input (stdin)")
     parser.add_argument('-m', '--mapping', 
         metavar='in.json',
         dest='map_files',
@@ -311,10 +312,15 @@ def main():
         version='%(prog)s ' + __version__)
     args = parser.parse_args()
 
+    # Argument sanity checks
     if (args.category and not args.map_files) or \
         (args.map_files and not args.category):
         parser.error("error: -m/--mapping and -c/--category must be supplied "
                      "together")
+
+    if args.alignment_file == '-' and args.feature_file == '-':
+        parser.error("error: standard input (stdin) can only be redirected to "
+            "a single positional argument")
 
     # Output run information
     all_args = sys.argv[1:]
@@ -395,7 +401,10 @@ def main():
     ftype_totals = 0
 
     try:
-        gff = HTSeq.GFF_Reader(args.feature_file)
+        if args.feature_file == '-':
+            gff = HTSeq.GFF_Reader(sys.stdin)
+        else:
+            gff = HTSeq.GFF_Reader(args.feature_file)
 
         for f in gff:
             f_totals += 1
