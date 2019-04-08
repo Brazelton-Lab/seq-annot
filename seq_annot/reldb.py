@@ -35,8 +35,8 @@ from arandomness.argparse import Open, ParseSeparator
 import argparse
 import json
 import os
-import seq_annot.db
-from seq_annot.seqio import open_io
+from seq_annot.db import *
+from seq_annot.seqio import open_io, write_io
 import sys
 import textwrap
 from time import time
@@ -141,46 +141,48 @@ def main():
 
     cs = True if args.match_cs else False
 
+    fields = args.fields if args.fields else []
     merge_field = [args.dup_field] if args.dup_field else []
-    output_fields = args.fields if args.fields else []
     subset_fields = [i.split(':', 1)[0] for i in args.subset_terms] \
                     if args.subset_terms else []
     filter_fields = [i.split(':', 1)[0] for i in args.filter_terms] \
                     if args.filter_terms else []
 
-    all_fields = output_fields + subset_fields + filter_fields + merge_field
+    all_fields = fields + subset_fields + filter_fields + merge_field
 
     merge = True if (args.dup_field or args.dup_file) else False
 
     if args.dup_file:
-        derep_algo = db.derep_by_file
+        derep_algo = derep_by_file
         by = args.dup_file
     else:
-        derep_algo = db.derep_by_field
+        derep_algo = derep_by_field
         by = args.dup_field
 
     # Load databases
     mapping = load_dbs(args.map_files, fields=all_fields)
+    nentry = len(mapping)
 
     # Keep only entries in list of IDs supplied by user
-    unwanted = set(mapping.keys()) - set(ids)
-    for unwanted_key in unwanted:
-        del mapping[unwanted_key]
+    if ids:
+        unwanted = set(mapping.keys()) - set(ids)
+        for unwanted_key in unwanted:
+            del mapping[unwanted_key]
 
-    if not len(mapping) > 0:
-        print("error: database contains no matching entries with the list of "
-            "supplied IDs", file=sys.stderr)
-        sys.exit(1)
+        if not len(mapping) > 0:
+            print("error: database contains no entries matching the list of "
+                "of supplied IDs", file=sys.stderr)
+            sys.exit(1)
 
     # Remove entries from database if values do not match any of the subset
     # patterns
     if args.subset_terms:
-        mapping = db.filter_dbs(mapping, patterns=args.subset_terms, 
+        mapping = filter_dbs(mapping, patterns=args.subset_terms, 
             subset=True, case=cs)
 
     # Remove entries from database if values match any of the filter patterns
     if args.filter_terms:
-        mapping = db.filter_dbs(mapping, patterns=args.filter_terms,
+        mapping = filter_dbs(mapping, patterns=args.filter_terms,
                              subset=False, case=cs)
 
     # Merge database entries by field or file
@@ -190,11 +192,12 @@ def main():
     # Output modified database
     if as_csv:
         # Output CSV header
+        output_fields = sorted(set(all_fields) - set(merge_field)) if merge_field else all_fields
         header = "#ID\t{}\n".format("\t".join(output_fields))
         write_io(out_h, header)
 
         for entry in mapping:
-            write_io(out_h, db.entry_as_csv(entry, output_fields))
+            write_io(out_h, "{}\n".format(entry_as_csv(entry, mapping[entry])))
     else:
         json.dump(mapping, out_h, sort_keys=True, indent=4, \
             separators=(',', ': '))
@@ -202,8 +205,8 @@ def main():
     # Calculate and print program run-time info
     end_time = time()
     total_time = (end_time - start_time) / 60.0
-    print("It took {:.2e} minutes to merge {!s} entries"\
-          .format(total_time, len(mapping)), file=sys.stderr)
+    print("It took {:.2e} minutes to parse {!s} entries"\
+          .format(total_time, nentry), file=sys.stderr)
     print("", file=sys.stderr)
 
 
