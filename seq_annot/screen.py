@@ -42,7 +42,7 @@ from bio_utils.iterators import B6Reader
 import json
 import os
 import re
-from seq_annot.reldb import load_dbs
+from seq_annot.db import load_dbs
 from seq_annot.seqio import write_io
 import sys
 import textwrap
@@ -52,7 +52,7 @@ __author__ = "Christopher Thornton"
 __license__ = 'GPLv3'
 __maintainer__ = 'Christopher Thornton'
 __status__ = "Alpha"
-__version__ = "0.4.4"
+__version__ = "0.4.5"
 
 
 def screen_aln_quality(hit, evalue=10, identity=0, length=0, score=0):

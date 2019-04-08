@@ -39,7 +39,7 @@ from arandomness.argparse import Open, ParseSeparator
 import argparse
 from bio_utils.iterators import B6Reader, GFF3Reader
 import json
-from seq_annot.reldb import load_dbs
+from seq_annot.db import load_dbs
 from seq_annot.seqio import open_io, write_io
 import sys
 import textwrap
@@ -49,7 +49,7 @@ __author__ = "Christopher Thornton"
 __license__ = 'GPLv3'
 __maintainer__ = 'Christopher Thornton'
 __status__ = "Alpha"
-__version__ = "0.4.3"
+__version__ = "0.4.4"
 
 
 def do_nothing(*args):
