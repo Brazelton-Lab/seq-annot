@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """
 Find evidence of co-residence between two sets of genomic features in a
-metagenome assembly.
+an assembly of mixed populations (such as a metagenome assembly).
 
 Required inputs are a GFF3 file of annotated features and a CSV file 
 containing exactly two columns. The first and second column should contain 
@@ -41,7 +41,7 @@ from arandomness.argparse import Open,ParseSeparator
 import argparse
 from bio_utils.iterators import fasta_iter, GFF3Reader
 import numpy as np
-from seq_annot.seqio import open_io, write_io
+from seq_annot.seqio import open_io, write_io, FormatError
 import sys
 import textwrap
 from time import time
@@ -327,16 +327,21 @@ def main():
             if row.startswith('#'):  #skip comments
                 continue
 
-            row = row.strip().split('\t')
+            row = row.rstrip().split('\t')
 
             try:
                 el1, el2 = row
             except ValueError:
-                raise FormatError("{}: line {}. Incorrect number of columns "
-                    "provided. Please verify file format"\
-                    .format(in_sets, nline))
+                if len(row) == 1:  #no el2 if length set1 > length set2
+                    el1 = row[0]
+                    set1.append(el1)
+                else:  #too many columns provided
+                    raise FormatError("{}: line {}. Incorrect number of "
+                        "columns provided. Please verify file format"\
+                        .format(in_sets, nline))
             else:
-                set1.append(el1)
+                if el1:  #could be blank if length set2 > length set1
+                    set1.append(el1)
                 set2.append(el2)
 
     # Prepare array for storing occurrences of co-residence
