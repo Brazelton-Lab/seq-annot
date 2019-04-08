@@ -2,10 +2,10 @@
 from setuptools import setup
 
 setup(name='seq-annot',
-      version='0.5.2',
+      version='0.6.0',
       packages=['seq_annot',],
       description='Tools that fascilitate the annotation and functional '
-          'comparison of genomes and metagenomes',
+          'comparison of metagenomes',
       classifiers=[
           'Development Status :: 4 - Beta',
           'Intended Audience :: Science/Research',
@@ -18,7 +18,7 @@ setup(name='seq-annot',
       ],
       keywords='bioinformatics sequence profiling annotation',
       url='https://github.com/Brazelton-Lab/seq-annot/',
-      download_url = 'https://github.com/Brazelton-Lab/seq-annot/archive/v0.5.0.tar.gz',
+      download_url = 'https://github.com/Brazelton-Lab/seq-annot/archive/v0.6.0.tar.gz',
       author='Christopher Thornton',
       author_email='christopher.thornton@utah.edu',
       license='GPLv3',
@@ -32,8 +32,8 @@ setup(name='seq-annot',
               'annotate_features = seq_annot.annotate:main',
               'screen_features = seq_annot.screen:main',
               'combine_features = seq_annot.combine:main',
-              'merge_reldbs = seq_annot.merge:main',
-              'manipulate_abunds = seq_annot.manipulate:main'
+              'reldbs = seq_annot.reldbs:main',
+              'colocate_features = seq_annot.colocate:main'
           ]
       }
       )
