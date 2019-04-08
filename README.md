@@ -6,7 +6,7 @@ Tools to facilitate annotation and comparison of genomes and metagenomes
 seq-annot is a python package for annotating and counting genomic features 
 in genomes and metagenomes. 
 
-## Licence:
+## Licence
 
 seq-annot is under [open source licence GPLv3](https://opensource.org/licenses/GPL-3.0)
 
