@@ -1,11 +1,17 @@
 #! /usr/bin/env python
 """
-Compare annotated feature abundances across samples.
+Compare annotated features across samples.
 
 Usage:
     compare_features in.csv [in.csv ...]
 
-Required input is one or more tabular files of feature abundances.
+Required input is one or more tabular files of feature characteristics. Each 
+input file should be composed of two or more columns, with the first column 
+consisting of feature IDs. Subsequent columns should be numerical variables 
+representing some form of information about a given feature, such as its 
+abundance or prevalence within a sample. The default method for handling 
+multiple variables is to sum the values (by row). Additional methods include 
+taking the mean, median, and occurrence.
 
 The compression algorithm is automatically detected for input files based on
 the file extension. To compress output, add the appropriate file extension
@@ -13,7 +19,7 @@ to the output file name (e.g. .gz, .bz2).
 
 Copyright:
 
-    compare_features calculate feature abundance statistics
+    compare_features compare feature statistics across samples
     Copyright (C) 2016  William Brazelton
 
     This program is free software: you can redistribute it and/or modify
@@ -36,8 +42,8 @@ from arandomness.argparse import Open, ParseSeparator
 import argparse
 import json
 import os
-from seq_annot.reldb import load_dbs
 from seq_annot.seqio import open_io, write_io, FormatError
+from statistics import mean, median
 import sys
 import textwrap
 from time import time
@@ -46,8 +52,19 @@ __author__ = 'Christopher Thornton'
 __license__ = 'GPLv3'
 __maintainer__ = 'Christopher Thornton'
 __status__ = "Alpha"
-__version__ = '0.4.1'
+__version__ = '0.5.0'
 
+
+def occurrence(values: list):
+    """Find the number of items in a list with value greater than zero.
+
+    Args:
+        values (list): list of numerical values
+
+    Retruns:
+        int: number of items greater than zero
+    """
+    return len([i for i in values if i > 0])
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__,
@@ -55,61 +72,40 @@ def main():
     parser.add_argument('csvs',
         metavar='in.csv',
         nargs='+',
-        help="input one or more feature abundance files in CSV format")
-    parser.add_argument('-m', '--mapping',
-        metavar='in.json',
-        dest='map_files',
-        action=ParseSeparator,
-        sep=',',
-        help="input one or more relational databases in JSON format containing "
-             "supplementary information about the features that should be "
-             "added to the table")
-    parser.add_argument('-f', '--fields',
-        metavar='FIELD [,FIELD,...]',
-        action=ParseSeparator,
-        sep=',',
-        help="comma-separated list of fields from the relational database "
-            "that should be added to the table")
+        help="input one or more feature characteristic files in CSV format")
     parser.add_argument('-o', '--out',
         action=Open,
         mode='wb',
         default=sys.stdout,
-        help="output tabular feature by sample table [default: output to stdout]")
+        help="output tabular feature x sample table [default: output to "
+             "stdout]")
     parser.add_argument('-n', '--names',
-        metavar='DATASET [,DATASET,...]',
+        metavar='NAME [,NAME,...]',
         action=ParseSeparator,
         sep=',',
-        help="comma-separated list of dataset names to be used as the header "
-             "[default: will use file names as dataset names]. The order "
-             "should match the order of the input files")
+        help="comma-separated list of dataset names to be used as the table "
+             "header [default: use input file basenames]. The order in which "
+             "the names are given should correspond to the order of the input "
+             "files")
     parser.add_argument('-i', '--ids',
-        metavar='FEATURE [,FEATURE,...]',
+        metavar='ID [,ID,...]',
         dest='features',
         action=ParseSeparator,
         sep=',',
         help="comma-separated list of feature IDs. Only those features "
-             "with a match in the list will be output [default: output all]")
-    parser.add_argument('-a', '--alias',
-        metavar='FIELD',
-        dest='alias_field',
-        help="database field containing the alias by which a feature should "
-             "be known. Feature abundances will be combined for features with "
-             "identical alias")
-    parser.add_argument('--header',
-        action='store_true',
-        help="first line of the input file is a header")
+             "in the list will be output [default: output all]")
+    parser.add_argument('-m', '--method',
+        metavar='METHOD',
+        dest='method',
+        default='sum',
+        choices=["sum", "mean", "median", "occur"],
+        help="method for combining values, on a per feature basis, when input "
+             "files contain more than two columns. Available options are sum, "
+             "mean, median, and occur(ence) [default: sum]")
     parser.add_argument('--version',
         action='version',
         version='%(prog)s ' + __version__)
     args = parser.parse_args()
-
-    if args.fields and not args.map_files:
-        parser.error("error: -m/--mapping and -f/--fields must be supplied "
-                     "together")
-
-    if args.alias_field and not args.map_files:
-        parser.error("error: -m/--mapping and -a/--alias must be supplied "
-                     "together")
 
     # Speedup trick
     list_type = type(list())
@@ -126,34 +122,25 @@ def main():
     # Assign variables based on user input
     out_h = args.out
 
+    if args.method == "mean":
+        method = mean
+    elif args.method == "median":
+        method = median
+    elif args.method == "occur": 
+        method = occurrence
+    else:
+        method = sum
+
     sample_names = args.names if args.names else [os.path.basename(i) for i \
                    in args.csvs]
     feature_names = args.features
-    fields = args.fields if args.fields else []
-    alias_field = args.alias_field
-    end_pos = len(fields)
-
-    if args.map_files and (alias_field or fields):
-        # Create header from sample names and desired fields
-        header_columns = fields + sample_names
-
-        # Read in the relational databases
-        all_fields = fields + [args.alias_field] if args.alias_field else fields
-        mapping = load_dbs(args.map_files, fields=all_fields)
-    else:
-        header_columns = sample_names
-        mapping = None
 
     # Store feature abundances in a dictionary
-    no_alias = 0
     totals = 0
     abundances = {}
     for position, csv_file in enumerate(args.csvs):
         with open_io(csv_file, mode='rb') as in_h:
-            if args.header:
-                header = in_h.readline()
-
-            for row in in_h:
+            for nline, row in enumerate(in_h):
 
                 row = row.decode('utf-8')
 
@@ -165,76 +152,49 @@ def main():
                 row = row.split('\t')
 
                 try:
-                    name, abundance = row
-                except:
-                    raise FormatError("input file {} does not have the "
-                                      "correct number of columns. Please "
-                                      "verify that that the file is formatted "
-                                      "correctly".format(csv_file))
+                    name, values = row[0], row[1:]
+                except ValueError:
+                    raise FormatError("{}: line {}. Incorrect number of "
+                        "columns provided. Please verify file format"\
+                        .format(csv_file, nline))
 
                 # Ignore features not found in list of features to include
                 if feature_names:
                     if name not in feature_names:
                         continue
 
-                # Search for alias
                 try:
-                    feature_id = mapping[name][alias_field]
-                except KeyError:
-                    no_alias += 1
-                    feature_id = name
-                except (AttributeError, TypeError):
-                    feature_id = name
+                    value = method([float(j) for j in values])
+                except ValueError:
+                    raise FormatError("{}: line {}. Variables should only "
+                        "contain numerical values".format(csv_file, nline))
 
                 try:
-                    abundances[feature_id][position + end_pos] += float(abundance)
+                    # Update sample value for existing feature
+                    abundances[feature_id][position] += float(value)
                 except KeyError:
-                    entries = []
-                    for field in fields:
-                        try:
-                            entry = mapping[name][field]
-                        except KeyError:
-                            entry = "NA"
-                        except AttributeError:
-                            entry = "NA"
-                        if not entry:
-                            entry = "NA"
-
-                        if type(entry) == list_type:
-                            entry = ';'.join(entry)
-
-                        entries.append(entry)
-
-                    abundances[feature_id] = entries + [float(0) for i in \
-                                                        sample_names]
-                    abundances[feature_id][position + end_pos] += float(abundance)
+                    # Set default values for new feature and update current 
+                    # sample value
+                    abundances[feature_id] = [float(0) for i in sample_names]
+                    abundances[feature_id][position] += value
 
     # Output header
-    header = "Feature\t{}\n".format('\t'.join(header_columns))
+    header = "#ID\t{}\n".format('\t'.join(sample_names))
     write_io(out_h, header)
 
     # Output feature abundances by sample
-    for feature in abundances:
+    for feature in sorted(abundances):
         entries = abundances[feature]
-        entries = '\t'.join(entries[0:end_pos] + ['{:g}'.format(i) for i in \
-                                                  entries[end_pos:]])
+        entries = '\t'.join(['{:g}'.format(i) for i in entries])
         write_io(out_h, "{}\t{!s}\n".format(feature, entries))
 
     # Output statistics
-    if alias_field:
-        print("", file=sys.stderr)
-        print("warning: unable to find an alias for {!s} features"\
-              .format(no_alias), file=sys.stderr)
-
     f_totals = len(abundances)
     s_totals = len(sample_names)
     print("", file=sys.stderr)
     print("Features processed:", file=sys.stderr)
     print("  - samples merged:\t{!s}".format(s_totals), file=sys.stderr)
     print("  - feature totals:\t{!s}".format(f_totals), file=sys.stderr)
-    if alias_field:
-        print("  - features combined:\t{!s}".format(totals - f_totals), \
-              file=sys.stderr)
 
     # Calculate and print program run-time info
     end_time = time()
