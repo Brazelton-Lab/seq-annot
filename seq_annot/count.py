@@ -52,7 +52,7 @@ __author__ = 'Christopher Thornton'
 __license__ = 'GPLv3'
 __maintainer__ = 'Christopher Thornton'
 __status__ = "Beta"
-__version__ = '1.5.6'
+__version__ = '1.5.7'
 
 
 class UnknownChrom(Exception):
@@ -180,28 +180,40 @@ def main():
              "given feature category will be reported in place of features. "
              "Multiple input files can be provided by separating them with a "
              "comma and no spaces")
-    parser.add_argument('-o', '--outpref',
-        type=str,
-        metavar='PREFIX',
-        dest='outpref',
-        default='sample',
-        help="prefix for the output tabular files containing feature abundance "
-             "estimates [default: sample]. File names will be appended with "
-             "the units, file format, and compression algorithm, if relevant "
-             "[e.g. sample.counts.csv.gz]")
-    parser.add_argument('-f', '--format', 
+    parser.add_argument('-c', '--category',
+        metavar='FIELD',
+        dest='category',
+        help="field in the relational database representing how features "
+             "are categorized")
+    gff_group = parser.add_argument_group('GFF3 arguments')
+    gff_group.add_argument('-t', '--type', 
+        metavar='TYPE', 
+        dest='ftype',
+        default='CDS',
+        help="feature type (3rd column in GFF file) to estimate abundance for "
+             "[default: CDS]. All features of other type will be ignored")
+    gff_group.add_argument('-a', '--attr',
+        metavar='ATTRIBUTE',
+        default="Name",
+        help="GFF attribute to use as the ID for the calculated abundances "
+             "[default: 'Name']. This value will also be used as the search "
+             "ID in the relational database, if provided")
+    aln_group = parser.add_argument_group('SAM/BAM arguments')
+    aln_group.add_argument('-f', '--format', 
         metavar='FORMAT', 
         dest='aformat',
         choices=['bam', 'sam'], 
         default='bam',
         help="input alignment file format [default: bam]. Options are 'sam' "
              "or 'bam'")
-    parser.add_argument('-c', '--category',
-        metavar='FIELD',
-        dest='category',
-        help="field in the relational database representing how features "
-             "are categorized")
-    parser.add_argument('-s', '--sorting', 
+    aln_group.add_argument('-q', '--qual', 
+        metavar='THRESH',
+        dest='minqual',
+        type=int, 
+        default=2,
+        help="skip all reads with alignment quality lower than the threshold "
+             "[default: 2]")
+    aln_group.add_argument('-s', '--sorting', 
         metavar='ORDER',
         dest='order',
         choices=["position", "name"], 
@@ -210,19 +222,16 @@ def main():
              "'name' [default: position]. Alignments must be pre-sorted "
              "either by position/coordinates or by read name. This option "
              "will be ignored for single-end reads")
-    parser.add_argument('-t', '--type', 
-        metavar='TYPE', 
-        dest='ftype',
-        default='CDS',
-        help="feature type (3rd column in GFF file) to estimate abundance for "
-             "[default: CDS]. All features of other type will be ignored")
-    parser.add_argument('-a', '--attr',
-        metavar='ATTRIBUTE',
-        default="Name",
-        help="GFF attribute to use as the ID for the calculated abundances "
-             "[default: 'Name']. This value will also be used as the search "
-             "ID in the relational database, if provided")
-    parser.add_argument('-e', '--mode', 
+    aln_group.add_argument('-b', '--buffer', 
+        metavar='BYTES',
+        dest='buffer_size',
+        type=int,
+        default=3145728,
+        help="buffer size for paired reads in the alignment file if sorted by "
+             "position [default: 3145728 (3GB)]. This value should be "
+             "increased if memory issues are encountered")
+    count_group = parser.add_argument_group('quantification arguments')
+    count_group.add_argument('-e', '--mode', 
         metavar='MODE',
         choices=["union", "intersection-strict", "intersection-nonempty"],
         default="union",
@@ -233,7 +242,7 @@ def main():
              "or only partially aligns to a single feature. The most "
              "inclusive mode is 'union' when given with the nonunique flag, "
              "and the least inclusive is 'intersection-strict'")
-    parser.add_argument('-u', '--units', 
+    count_group.add_argument('-u', '--units', 
         metavar='UNITS',
         dest='norm',
         action=ParseSeparator,
@@ -257,44 +266,39 @@ def main():
              "can also be performed when used with the -k/--coeff argument, in "
              "which case the length normalized proportion of a feature will be "
              "multiplied by the provided scaling factor.")
-    parser.add_argument('-k', '--coeff',
+    count_group.add_argument('-k', '--coeff',
         metavar='MUL',
         dest='sfactor',
         type=float,
         default=1,
         help="multiplier to use when 'custom' is given to -u/--units "
              "[default: 1]")
-    parser.add_argument('-q', '--qual', 
-        metavar='THRESH',
-        dest='minqual',
-        type=int, 
-        default=2,
-        help="skip all reads with alignment quality lower than the threshold "
-             "[default: 2]")
-    parser.add_argument('-b', '--buffer', 
-        metavar='BYTES',
-        dest='buffer_size',
-        type=int,
-        default=3145728,
-        help="buffer size for paired reads in the alignment file if sorted by "
-             "position [default: 3145728 (3GB)]. This value should be "
-             "increased if memory issues are encountered")
-    parser.add_argument('--cdna',
+    count_group.add_argument('--cdna',
         dest='transcripts',
         action='store_true',
         help="sequences represent cDNA [default: False]. Whether sequences are "
              "from gDNA or cDNA will determine how the length of a feature is "
              "calculated for normalization. If cDNA, effective length will "
              "serve as feature length")
-    parser.add_argument('--filter',
+    count_group.add_argument('--nonunique',
+        action='store_true',
+        help="allow reads to align with more than one feature")
+    output_group = parser.add_argument_group('output control arguments')
+    output_group.add_argument('-o', '--outpref',
+        type=str,
+        metavar='PREFIX',
+        dest='outpref',
+        default='sample',
+        help="prefix for the output tabular files containing feature abundance "
+             "estimates [default: sample]. File names will be appended with "
+             "the units, file format, and compression algorithm, if relevant "
+             "[e.g. sample.counts.csv.gz]")
+    output_group.add_argument('--filter',
         dest='cat_only',
         action='store_true',
         help="only output abundances for features with an associated feature "
              "category [default: output all]")
-    parser.add_argument('--nonunique',
-        action='store_true',
-        help="allow reads to align with more than one feature")
-    compression = parser.add_mutually_exclusive_group()
+    compression = output_group.add_mutually_exclusive_group()
     compression.add_argument('--gzip',
         dest='gzipped',
         action='store_true',

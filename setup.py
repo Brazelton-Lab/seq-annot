@@ -32,7 +32,7 @@ setup(name='seq-annot',
               'annotate_features = seq_annot.annotate:main',
               'screen_features = seq_annot.screen:main',
               'combine_features = seq_annot.combine:main',
-              'reldbs = seq_annot.reldbs:main',
+              'reldb = seq_annot.reldb:main',
               'colocate_features = seq_annot.colocate:main'
           ]
       }
