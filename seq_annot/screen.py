@@ -3,9 +3,6 @@
 Screen the results of a homology search using bit-score thresholds, 
 alternative phenotype-conferring snps, or other scoring metrics.
 
-Usage:
-    screen_features [options] [-m in.json] [-s in.csv] [-o out.b6] in.b6
-
 Required input is a tabular file of pairwise alignments (B6 format). Optional 
 inputs are a tabular SNP file containing information on alternative phenotypes 
 and a relational database in JSON format containing an appropriate scoring 
