@@ -17,6 +17,13 @@ class FormatError(Exception):
         Exception.__init__(self,*args,**kwargs)
 
 
+class InputError(Exception):
+    """A simple exception that is raised when bad argument values encountered
+    """
+    def __init__(self,*args,**kwargs):
+        Exception.__init__(self,*args,**kwargs)
+
+
 def open_io(infile, **kwargs):
     """Open input files based on file extension for reading or writing
     """

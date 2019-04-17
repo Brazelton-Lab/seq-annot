@@ -4,10 +4,10 @@
 
 import json
 import re
-from seq_annot.seqio import open_io
+from seq_annot.seqio import open_io, InputError
 import sys
 
-def load_dbs(infiles:list, fields: list=None):
+def load_dbs(infiles:list, fields:list=None, csv:bool=False):
     """Load relational databases into memory
 
     Args:
@@ -15,21 +15,56 @@ def load_dbs(infiles:list, fields: list=None):
 
         fields (list): list of fields to load [default: load all]
 
+        csv (bool): input files are in tabular CSV format if True else input 
+            is formatted as JSON. If input is in CSV format, field names will 
+            be taken from the header (first line of the file).
+
     Returns:
         dict: relational database loaded as a dictionary
     """
 
     mapping = {}
     for map_file in infiles:
-        json_map = json.load(open_io(map_file))
-        if fields:
-            for item in json_map:
-                entry = json_map[item]
-                entry = {k: entry[k] for k in entry.keys() & set(fields)}
+        in_h = open_io(map_file)
 
-                mapping[item] = entry
-        else:
-            mapping = {**json_map, **mapping}
+        if not csv:  #mapping is JSON formatted
+            json_map = json.load(in_h)
+
+            # Subset based on desired fields
+            if fields:
+                fields = set(fields)
+
+                for item in json_map:
+                    entry = json_map[item]
+                    entry = {k: entry[k] for k in entry.keys() & fields}
+
+                    # Add entry to DB
+                    mapping[item] = entry
+            else:
+                # Add all entries to DB at once
+                mapping = {**json_map, **mapping}
+
+        else:  #mapping is CSV formatted
+            header = in_h.readline()
+            header = header.rstrip().split('\t')
+
+            # Subset based on desired fields
+            if not fields:
+                fields = header
+
+            # Extract indices corresponding to desired fields
+            try:
+                keep = [header.index(i) for i in fields]
+            except ValueError:  #field not in header
+                bad_fields = ', '.join(set(fields).difference(header))
+                raise InputError("{}: line 1. Provided field(s) '{}' not "
+                    "found in the file header".format(map_file, bad_fields))
+
+            # Add entries to DB one per line
+            for line in in_h:
+                line = line.rstrip().split('\t')
+                acc = line[0]
+                mapping[acc] = {header[i]:line[i] for i in keep}
 
     return(mapping)
 
