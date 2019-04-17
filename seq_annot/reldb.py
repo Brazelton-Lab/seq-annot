@@ -6,7 +6,7 @@ entry merging, database subsetting, and format conversion.
 Usage:
     reldbs in.json [in.json ...]
 
-Required input is one or more JSON-formatted database files.
+Required input is one or more database files in JSON or tabular CSV format.
 
 The compression algorithm is automatically detected for input files based on
 the file extension. To compress output, add the appropriate file extension
