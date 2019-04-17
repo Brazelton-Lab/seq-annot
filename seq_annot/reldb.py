@@ -45,7 +45,7 @@ __author__ = 'Christopher Thornton'
 __license__ = 'GPLv3'
 __maintainer__ = 'Christopher Thornton'
 __status__ = "Alpha"
-__version__ = '0.4.0'
+__version__ = '0.4.1'
 
 
 def main():
@@ -115,9 +115,14 @@ def main():
         sep=',',
         help="comma-separated list of fields from the relational database to "
              "be included in the output")
-    output_group.add_argument('--csv',
+    output_group.add_argument('--out-csv',
+        dest='out_csv',
         action='store_true',
         help="output database as tabular CSV")
+    parser.add_argument('--in-csv',
+        dest='in_csv',
+        action='store_true',
+        help="input database is in tabular CSV format")
     parser.add_argument('--version',
         action='version',
         version='%(prog)s ' + __version__)
@@ -135,7 +140,8 @@ def main():
 
     # Assign variables based on user input
     out_h = args.out
-    as_csv = args.csv
+    as_csv = args.out_csv
+    is_csv = args.in_csv
 
     ids = args.ids
 
@@ -160,7 +166,7 @@ def main():
         by = args.dup_field
 
     # Load databases
-    mapping = load_dbs(args.map_files, fields=all_fields)
+    mapping = load_dbs(args.map_files, fields=all_fields, csv=is_csv)
     nentry = len(mapping)
 
     # Keep only entries in list of IDs supplied by user
