@@ -4,7 +4,7 @@
 
 import json
 import re
-from seq_annot.seqio import open_io, InputError
+from seq_annot.seqio import open_io, InputError, FormatError
 import sys
 
 def load_dbs(infiles:list, fields:list=None, csv:bool=False):
@@ -64,7 +64,10 @@ def load_dbs(infiles:list, fields:list=None, csv:bool=False):
             for line in in_h:
                 line = line.rstrip().split('\t')
                 acc = line[0]
-                mapping[acc] = {header[i]:line[i] for i in keep}
+                try:
+                    mapping[acc] = {header[i]:line[i] for i in keep}
+                except IndexError:
+                    raise FormatError("{}: line {}. The number of fields in the row do not match the number of fields in the header".format())
 
     return(mapping)
 
