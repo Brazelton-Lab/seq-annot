@@ -61,13 +61,15 @@ def load_dbs(infiles:list, fields:list=None, csv:bool=False):
                     "found in the file header".format(map_file, bad_fields))
 
             # Add entries to DB one per line
-            for line in in_h:
+            for nline, line in enumerate(in_h):
                 line = line.rstrip().split('\t')
                 acc = line[0]
                 try:
                     mapping[acc] = {header[i]:line[i] for i in keep}
                 except IndexError:
-                    raise FormatError("{}: line {}. The number of fields in the row do not match the number of fields in the header".format())
+                    raise FormatError("{}: line {}. The number of fields in "
+                    "the row do not match the number of fields in the header"\
+                    .format(mapfile, nline))
 
     return(mapping)
 
