@@ -4,9 +4,9 @@ Annotate a GFF3 file of putative protein-coding genes using the results of a
 homology search to a database of genes with known or predicted function.
 
 Required input is a GFF3 file of predicted protein-coding genes and a tabular 
-file of pairwise alignments (B6 format). Optional input is a relational 
-database in JSON format containing additional information on a hit. The query 
-IDs (first column) in the B6 file must match their corresponding value in 
+file of pairwise alignments (B6/HMMER format). Optional input is a relational 
+database in JSON format containing additional information on a hit. The 
+dataset IDs in the alignment file must match their corresponding value in 
 the ID attribute of the GFF.
 
 The compression algorithm is automatically detected for input files based on 
@@ -40,7 +40,7 @@ import argparse
 from bio_utils.iterators import B6Reader, GFF3Reader
 import json
 from seq_annot.db import load_dbs
-from seq_annot.seqio import open_io, write_io
+from seq_annot.seqio import *
 import sys
 import textwrap
 from time import time
@@ -49,12 +49,11 @@ __author__ = "Christopher Thornton"
 __license__ = 'GPLv3'
 __maintainer__ = 'Christopher Thornton'
 __status__ = "Alpha"
-__version__ = "0.4.4"
+__version__ = "0.5.5"
 
 
 def do_nothing(*args):
     pass
-
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__,
@@ -65,79 +64,95 @@ def main():
         mode='rb',
         default=sys.stdin,
         help="input feature predictions in GFF3 format [default: input from "
-             "stdin]")
-    parser.add_argument('-b', '--b6',
-        metavar='in.b6 [,in.b6,...]',
+            "stdin]")
+    parser.add_argument('-b', '--hits',
+        metavar='in.aln [,in.aln,...]',
         action=ParseSeparator,
         sep=',',
-        help="input one or more best-hit alignment files in B6/M8 format. The "
-             "alignment format should be provided to -s/--specifiers if other "
-             "than the default BLAST+ tabular format")
+        help="input one or more best-hit alignment files in B6/M8 or HMMER "
+            "tblout format. The alignment format should be provided to "
+            "-s/--specifiers if other than the default BLAST+ tabular or "
+            "HMMER tblout format")
+    parser.add_argument('-r', '--format',
+        dest="aln_format",
+        metavar='FORMAT',
+        choices=["b6", "hmm"],
+        default="b6",
+        help="format of the files containing the homology search results "
+            "[default: b6]. Options are b6 or hmm")
     parser.add_argument('-m', '--mapping',
         metavar='in.json [,in.json,...]',
         dest='map_files',
         action=ParseSeparator,
         sep=',',
         help="input one or more relational databases in JSON format containing "
-        "attribute fields. Multiple input files can be provided by separating "
-        "them with a comma and no spaces")
+            "attribute fields. Multiple input files can be provided by "
+            "separating them with a comma and no spaces")
     parser.add_argument('-o', '--out',
         metavar='out.gff',
         action=Open,
         mode='wb',
         default=sys.stdout,
         help="output annotated features in GFF3 format [default: output to "
-             "stdout]")
+            "stdout]")
     parser.add_argument('-i', '--id',
         dest='id',
         default='ID',
-        help="attribute name used to match GFF3 entries to B6 query sequences "
-             "[default: ID]")
+        help="attribute name used to match GFF3 entries to sequences from the "
+            "homology search [default: ID]")
     parser.add_argument('-s', '--specifiers',
         dest="format",
         action=ParseSeparator,
         sep=",",
         default=["qaccver", "saccver", "pident", "length", "mismatch", 
-                 "gapopen", "qstart", "qend", "sstart", "send", "evalue", 
-                 "bitscore"], 
+            "gapopen", "qstart", "qend", "sstart", "send", "evalue", 
+            "bitscore"], 
         help="input alignment format, ordered by field specifier [default: "
-             "qaccver, saccver, pident, length, mismatch, gapopen, qstart, "
-             "qend, sstart, send, evalue, bitscore]")
+            "qaccver, saccver, pident, length, mismatch, gapopen, qstart, "
+            "qend, sstart, send, evalue, bitscore]")
     parser.add_argument('-f', '--fields',
         metavar='FIELD [,FIELD,...]',
         dest='fields',
         action=ParseSeparator,
         sep=',',
         help="comma-separated list of fields from the provided relational "
-             "database that should be included as attributes. The field "
-             "'Alias' should not be used, as it is reserved for annotation")
+            "database that should be included as attributes. The field "
+            "'Alias' should not be used, as it is reserved for annotation")
     parser.add_argument('-c', '--conflict',
         dest='precedence',
         choices=['order', 'quality'],
         default='quality',
         help="method to resolve conflicting annotations [default: quality]. "
-             "Options are 'order' and 'quality'. If 'order', precedence will "
-             "be determined by input file order. If 'quality', precedence "
-             "will be given to the match with the highest quality alignment, "
-             "determined by bitscore")
+            "Options are 'order' and 'quality'. If 'order', precedence will "
+            "be determined by input file order. If 'quality', precedence "
+            "will be given to the match with the highest quality alignment, "
+            "determined by bitscore")
     parser.add_argument('-t', '--type',
         dest='ftype',
         help="feature type (3rd column in GFF file) to annotate [default: "
-             "annotate features of all type]. All features of other type will "
-             "be ignored")
-    parser.add_argument('-p', '--product',
+            "annotate features of all type]. All features of other type will "
+            "be ignored")
+    hmm_parser = parser.add_argument_group(title="HMM input options")
+    hmm_parser.add_argument('--reverse',
+        action='store_true',
+        help="dataset sequence assumed the role of target in the homology "
+            "search (i.e. hmmsearch was used)")
+    hmm_parser.add_argument('--domain',
+        action='store_true',
+        help="use scores from the single best-scoring domain")
+    output_control = parser.add_argument_group(title="output control options")
+    output_control.add_argument('-p', '--product',
         metavar='STR',
         dest='prod_def',
         help="default product for features without associated product "
-             "information in relational database (e.g. hypothetical protein)")
-    parser.add_argument('-a', '--alias',
+            "information in relational database (e.g. hypothetical protein)")
+    output_control.add_argument('-a', '--alias',
         metavar='Field:Alias',
         dest='field_alias',
         action='append',
         help="alias to use in place of the field name when outputting "
-             "attributes (e.g. gene:Name). Can provide multiple aliases "
-             "through repeated use of the argument")
-    output_control = parser.add_argument_group(title="output control options")
+            "attributes (e.g. gene:Name). Can provide multiple aliases "
+            "through repeated use of the argument")
     output_control.add_argument('-d', '--discarded',
         metavar='out.log',
         dest='log',
@@ -151,10 +166,10 @@ def main():
         dest='clear_attrs',
         action='store_true',
         help="overwrite existing attributes [default: append new attributes "
-             "to the end of existing attributes]. Attributes with predefined "
-             "meaning according to the GFF3 specifications or reserved "
-             "attributes (those that begin with an uppercase character) are "
-             "exempt")
+            "to the end of existing attributes]. Attributes with predefined "
+            "meaning according to the GFF3 specifications or reserved "
+            "attributes (those that begin with an uppercase character) are "
+            "exempt")
     parser.add_argument('--version',
         action='version',
         version='%(prog)s ' + __version__)
@@ -165,7 +180,7 @@ def main():
 
     if args.field_alias and not (args.map_files and args.fields):
         parser.error("-m/--mapping and -f/--fields must be supplied when "
-                     "-a/--alias is used")
+            "-a/--alias is used")
 
     # Output run information
     all_args = sys.argv[1:]
@@ -185,6 +200,7 @@ def main():
     out_log("#Kept\tDiscarded\tReason\n".encode('utf-8'))
 
     id_attr = args.id
+    aln_format = args.aln_format
     map_fields = [i for i in args.fields if i != "Alias"] \
         if args.fields else []  #Alias is reserved for annotation
     attr_alias = args.field_alias if args.field_alias else []
@@ -192,6 +208,9 @@ def main():
     specifiers = args.format
     default_product = args.prod_def
     feature_type = args.ftype
+
+    dom = args.domain
+    revq = args.reverse
 
     # Load mappings, if provided
     mapping = load_dbs(args.map_files) if args.map_files else None
@@ -218,31 +237,40 @@ def main():
     aln_totals = 0  #all hits to any database
     dis_totals = 0  #multiple annotations for single query
     hits = {}  #store matches and additional attributes
-    for b6 in args.b6:
-        with open_io(b6) as in_h:
-            b6_reader = B6Reader(in_h)
-            for hit in b6_reader.iterate(header=specifiers):
+    for hits_file in args.hits:
+        with open_io(hits_file) as in_h:
+            if aln_format == "b6":
+                reader = B6Reader(in_h)
+                iter_obj = reader.iterate(header=specifiers)
+            else:
+                reader = HMMReader(in_h)
+                iter_obj = reader.iterate()
+
+            for entry in iter_obj:
                 aln_totals += 1
 
-                query = hit.query
+                hit = Homolog()
+                hit.parse_entry(entry, reverse_query=revq, domain=dom)
+
+                query = hit.seqid
 
                 if query in hits:
                     dis_totals += 1
 
                     if match_precedence == 'order':
                         # Preserve only best hit on first come basis
-                        out_log("{}\t{}\t{}\n".format(hits[query].subject, \
-                                hit.subject, 'order').encode('utf-8'))
+                        out_log("{}\t{}\t{}\n".format(hits[query].dbid, \
+                                hit.dbid, 'order').encode('utf-8'))
                     else:
                         # Determine which match has the best alignment score
-                        prev_score = hits[query].bitscore
+                        prev_score = hits[query].score
 
-                        if prev_score >= hit.bitscore:  #existing match is best
-                            out_log("{}\t{}\t{}\n".format(hits[query].subject, \
-                                    hit.subject, 'score').encode('utf-8'))
+                        if prev_score >= hit.score:  #existing match is best
+                            out_log("{}\t{}\t{}\n".format(hits[query].dbid, \
+                                    hit.dbid, 'score').encode('utf-8'))
                         else:
-                            out_log("{}\t{}\t{}\n".format(hit.subject, \
-                                    hits[query].subject, 'score').encode('utf-8'))
+                            out_log("{}\t{}\t{}\n".format(hit.dbid, \
+                                    hits[query].dbid, 'score').encode('utf-8'))
                             hits[query] = hit
                 else:
                     hits[query] = hit
@@ -309,7 +337,7 @@ def main():
                 continue
         else:
             annot_totals += 1
-            subject = hit.subject
+            subject = hit.dbid
 
             entry.attributes['Alias'] = subject
             # Include additional information about a hit if a relational 
