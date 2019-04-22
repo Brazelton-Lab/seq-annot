@@ -5,8 +5,8 @@ homology search to a database of genes with known or predicted function.
 
 Required input is a GFF3 file of predicted protein-coding genes and a tabular 
 file of pairwise alignments (B6/HMMER format). Optional input is a relational 
-database in JSON format containing additional information on a hit. The 
-dataset IDs in the alignment file must match their corresponding value in 
+database in JSON format containing additional information on a database entry. 
+The dataset IDs in the alignment file must match their corresponding value in 
 the ID attribute of the GFF.
 
 The compression algorithm is automatically detected for input files based on 
