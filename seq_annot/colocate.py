@@ -50,7 +50,7 @@ __author__ = 'Christopher Thornton'
 __license__ = 'GPLv3'
 __maintainer__ = 'Christopher Thornton'
 __status__ = "Beta"
-__version__ = '0.1.1'
+__version__ = '0.1.4'
 
 
 class GenomicRegion:
@@ -158,7 +158,7 @@ class GenomicRegion:
         else:
             return(False)
 
-    def parse_gff(self, entry, tag='ID'):
+    def parse_gff(self, entry, tag):
         """Populate dictionary of cargo features by parsing GFF3Entry objects
 
         Args:
@@ -166,7 +166,11 @@ class GenomicRegion:
 
             tag (str): GFF3 attribute to use as feature ID
         """
-        ident = entry.attributes[tag]
+        try:
+            ident = entry.attributes[tag]
+        except KeyError:
+            raise
+
         new_ident = "{}_{}".format(ident, len(self.cargo)+1)
 
         self.cargo[new_ident] = (entry.strand, entry.start, entry.end)
@@ -188,9 +192,14 @@ class GenomicRegion:
         return(ids)
 
 
-def output_dist(handle, contig, int1, int2):
+def output_dist(handle, contig, int1, int2, outall=False):
     """Write contig length and relative distance distributions to file
     """
+    length = contig.length
+    seqid = contig.seqid
+    ncargo = len(contig.cargo)
+
+    # Contig contains elements from both sets
     if int1 and int2:
         idents2 = []
         for ident in int2:
@@ -207,24 +216,50 @@ def output_dist(handle, contig, int1, int2):
 
             distance = min(dists)
 
-            length = contig.length
+            # Output contig length and distance distributions
             names2 = ";".join(sorted(int2))
-            output = "{}\t{}\t{}\t{}\n".format(name, names2, length, distance)
+            output = "{}\t{}\t{}\t{}\t{}\t{}\n".format(name, names2, seqid, \
+                length, distance, ncargo)
             write_io(handle, output)
 
-def increment_occurrence(co_res, contig, set1, set2, distribution=None):
+    # Contig contains elements only from primary set
+    elif int1 and not int2:
+        for name in int1:
+            output = "{}\tNA\t{}\t{}\tNA\t{}\n".format(name, seqid, length, \
+                ncargo)
+            write_io(handle, output)
+
+    # Contig contains elements only from secondary set
+    elif int2 and not int1:
+        for name in int2:
+            output = "NA\t{}\t{}\t{}\tNA\t{}\n".format(name, seqid, length, \
+                ncargo)
+            write_io(handle, output)
+
+    else:
+        if outall:
+            output = "NA\tNA\t{}\t{}\tNA\t{}\n".format(seqid, length, ncargo)
+            write_io(handle, output)
+
+def increment_occurrence(co_res, contig, set1, set2, dist=None, outall=False):
     """Increment elements of the co-occurrence matrix when evidence of 
     co-redidence
     """
+    # Convert feature positional IDs back to standard name
     features = set([i.rsplit("_", 1)[0] for i in contig.cargo.keys()])
+
+    # Find intersection between elements in the sets and features on the contig
     int1 = features.intersection(set1)
     int2 = features.intersection(set2)
 
-    if distribution:
-        output_dist(distribution, contig, int1, int2)
+    if dist:
+        output_dist(dist, contig, int1, int2, outall)
 
+    # Match intersection results to appropriate locations in occurrence table
     row_pos = [set1.index(i) for i in int1] if int1 else [-1]
     col_pos = [set2.index(j) for j in int2] if int2 else [-1]
+
+    # Increment co-occurrence table by row and column coordinates
     for r in row_pos:
         for c in col_pos:
             co_res[r][c] += 1
@@ -271,6 +306,10 @@ def main():
         default="Alias",
         help="attribute tag for connecting GFF3 entries to elements within "
              "the feature sets file [default: Alias]")
+    parser.add_argument('--all',
+        action='store_true',
+        help="output lengths for all genomic regions in the GFF3 file, not "
+             "just regions containing set elements")
     parser.add_argument('--version',
         action='version',
         version='%(prog)s ' + __version__)
@@ -297,6 +336,7 @@ def main():
 
     # Assign variables based on user inputs
     attr_tag = args.attr
+    all_len = args.all
 
     out_h = args.out 
     out_d = args.out_dist
@@ -317,14 +357,14 @@ def main():
         for record in fasta_iter(args.in_fasta):
             len_dist[record.id] = len(record.sequence)
 
-    # Store elements of feature sets file
+    # Populate sets with elements from the CSV file
     set1 = []
     set2 = []
     with open_io(in_sets, mode='rb') as in_h:
         for nline, row in enumerate(in_h):
             row = row.decode('utf-8')
 
-            if row.startswith('#'):  #skip comments
+            if row.startswith('#'):  #comments are ignored
                 continue
 
             row = row.rstrip().split('\t')
@@ -344,7 +384,7 @@ def main():
                     set1.append(el1)
                 set2.append(el2)
 
-    # Prepare array for storing occurrences of co-residence
+    # Prepare data array for storing occurrences of co-residence
     rows = set1 + ["None"]
     columns = set2 + ["None"]
 
@@ -353,9 +393,10 @@ def main():
 
     co_res = np.zeros((nrow, ncol))
 
-    # Output header for distributions
+    # Output header for distributions file
     if out_d:
-        write_io(out_d, "#ID\tColocated\tContigLength\tMinimumDistance\n")
+        header = "#Set1\tSet2\tSeqID\tSeqLength\tMinDistance\tNumFeatures\n"
+        write_io(out_d, header)
 
     # Iterate over GFF3 file
     nfeatures = 0
@@ -369,31 +410,34 @@ def main():
 
         try:
             feature = entry.attributes[attr_tag]
-        except KeyError:  #skip features without proper attribute tag
+        except KeyError:  #feature doesn't have proper attribute tag
             no_attr += 1
             continue
          
         seqid = entry.seqid
-        if seqid != giv.seqid:
+        if seqid != giv.seqid:  #new contig encountered
             # Process previous genomic region
-            co_res = increment_occurrence(co_res, giv, set1, set2, out_d) 
+            co_res = increment_occurrence(co_res, giv, set1, set2, out_d, \
+                all_len) 
 
             # Reset for new genomic region interval
             giv = GenomicRegion()
             giv.seqid = seqid
 
-            if out_d:  #add contig length to GenomicRegion object
+            # Add contig length to GenomicRegion object
+            if out_d:
                 try:
                     giv.length = len_dist[seqid]
                 except KeyError:
                     giv.length = "NA"
 
             ncontigs += 1
-        
-        giv.parse_gff(entry, attr_tag)  #add feature as cargo to contig
+
+        # Add feature as cargo to the genomic region
+        giv.parse_gff(entry, attr_tag)
 
     # Process last contig
-    co_res = increment_occurrence(co_res, giv, set1, set2, out_d)
+    co_res = increment_occurrence(co_res, giv, set1, set2, out_d, all_len)
 
     # Output co-occurrence table
     write_io(out_h, "ID\t{}\n".format("\t".join(columns)))
