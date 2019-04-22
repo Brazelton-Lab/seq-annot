@@ -69,7 +69,7 @@ def load_dbs(infiles:list, fields:list=None, csv:bool=False):
                 except IndexError:
                     raise FormatError("{}: line {}. The number of fields in "
                     "the row do not match the number of fields in the header"\
-                    .format(map_file, nline))
+                    .format(map_file, nline + 1))
 
     return(mapping)
 
