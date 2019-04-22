@@ -11,7 +11,7 @@ consisting of feature IDs. Subsequent columns should be numerical variables
 representing some form of information about a given feature, such as its 
 abundance or prevalence within a sample. The default method for handling 
 multiple variables is to sum the values (by row). Additional methods include 
-taking the mean, median, and occurrence.
+taking the mean, median, and occurrence of each row or adding cell values.
 
 The compression algorithm is automatically detected for input files based on
 the file extension. To compress output, add the appropriate file extension
@@ -40,7 +40,9 @@ from __future__ import print_function
 
 from arandomness.argparse import Open, ParseSeparator
 import argparse
+from collections import OrderedDict
 import json
+import numpy as np
 import os
 from seq_annot.seqio import open_io, write_io, FormatError
 from statistics import mean, median
@@ -83,10 +85,10 @@ def main():
         metavar='NAME [,NAME,...]',
         action=ParseSeparator,
         sep=',',
-        help="comma-separated list of dataset names to be used as the table "
-             "header [default: use input file basenames]. The order in which "
-             "the names are given should correspond to the order of the input "
-             "files")
+        help="comma-separated list of names to be used as the table header "
+             "[default: use input file basenames]. The order in which the "
+             "names are given should correspond to the order of the input "
+             "files if combining values using any method other than add")
     parser.add_argument('-i', '--ids',
         metavar='ID [,ID,...]',
         dest='features',
@@ -98,10 +100,13 @@ def main():
         metavar='METHOD',
         dest='method',
         default='sum',
-        choices=["sum", "mean", "median", "occur"],
+        choices=["sum", "mean", "median", "occur", "add"],
         help="method for combining values, on a per feature basis, when input "
-             "files contain more than two columns. Available options are sum, "
-             "mean, median, and occur(ence) [default: sum]")
+             "files contain more than two columns. Available options are add, "
+             "sum, mean, median, and occur(ence) [default: sum]. If method is "
+             "add, cells in the input tables will be added together. Adding "
+             "cell values requires that the tables have equal dimensions. All "
+             "other methods act on table rows")
     parser.add_argument('--version',
         action='version',
         version='%(prog)s ' + __version__)
@@ -121,6 +126,7 @@ def main():
 
     # Assign variables based on user input
     out_h = args.out
+    infiles = args.csvs
 
     if args.method == "mean":
         method = mean
@@ -128,18 +134,20 @@ def main():
         method = median
     elif args.method == "occur": 
         method = occurrence
+    elif args.method == "add": 
+        method = None
     else:
         method = sum
 
-    sample_names = args.names if args.names else [os.path.basename(i) for i \
+    colnames = args.names if args.names else [os.path.basename(i) for i \
                    in args.csvs]
-    feature_names = args.features
+    rownames = args.features
 
-    # Store feature abundances in a dictionary
+    # Combine feature abundances
     totals = 0
-    abundances = {}
-    for position, csv_file in enumerate(args.csvs):
-        with open_io(csv_file, mode='rb') as in_h:
+    abundances = OrderedDict()
+    for position, infile in enumerate(infiles):
+        with open_io(infile, mode='rb') as in_h:
             for nline, row in enumerate(in_h):
 
                 row = row.decode('utf-8')
@@ -149,7 +157,7 @@ def main():
                 else:
                     totals += 1
 
-                row = row.split('\t')
+                row = row.rstrip().split('\t')
 
                 try:
                     name, values = row[0], row[1:]
@@ -159,38 +167,50 @@ def main():
                         .format(csv_file, nline))
 
                 # Ignore features not found in list of features to include
-                if feature_names:
-                    if name not in feature_names:
+                if rownames:
+                    if name not in rownames:
                         continue
 
                 try:
-                    value = method([float(j) for j in values])
+                    values = [float(j) for j in values]
                 except ValueError:
                     raise FormatError("{}: line {}. Variables should only "
-                        "contain numerical values".format(csv_file, nline))
+                        "contain numerical values".format(infile, nline))
 
-                try:
-                    # Update sample value for existing feature
-                    abundances[feature_id][position] += float(value)
-                except KeyError:
-                    # Set default values for new feature and update current 
-                    # sample value
-                    abundances[feature_id] = [float(0) for i in sample_names]
-                    abundances[feature_id][position] += value
+                if method:
+                    value = method(values)
+                    try:
+                        # Update sample value for existing feature
+                        abundances[name][position] += value
+                    except KeyError:
+                        # Set default values for new feature and update current 
+                        # sample value
+                        abundances[name] = [float(0) for i in colnames]
+                        abundances[name][position] += value
+
+                else:
+                    values = np.array(values)
+                    try:
+                        abundances[name] += values
+                    except KeyError:
+                        abundances[name] = values
+                    except ValueError:
+                        raise FormatError("{}: line {}. Input tables have "
+                            "unequal dimensions".format(infile, nline))
 
     # Output header
-    header = "#ID\t{}\n".format('\t'.join(sample_names))
+    header = "#ID\t{}\n".format('\t'.join(colnames))
     write_io(out_h, header)
 
     # Output feature abundances by sample
-    for feature in sorted(abundances):
-        entries = abundances[feature]
-        entries = '\t'.join(['{:g}'.format(i) for i in entries])
-        write_io(out_h, "{}\t{!s}\n".format(feature, entries))
+    for rowname in abundances:
+        row = abundances[rowname]
+        row = '\t'.join(['{:g}'.format(i) for i in row])
+        write_io(out_h, "{}\t{!s}\n".format(rowname, row))
 
     # Output statistics
     f_totals = len(abundances)
-    s_totals = len(sample_names)
+    s_totals = len(colnames)
     print("", file=sys.stderr)
     print("Features processed:", file=sys.stderr)
     print("  - samples merged:\t{!s}".format(s_totals), file=sys.stderr)
