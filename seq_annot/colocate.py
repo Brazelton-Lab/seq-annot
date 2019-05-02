@@ -158,22 +158,17 @@ class GenomicRegion:
         else:
             return(False)
 
-    def parse_gff(self, entry, tag):
+    def parse_gff(self, entry, feature):
         """Populate dictionary of cargo features by parsing GFF3Entry objects
 
         Args:
             entry (class): GFF3Entry object
 
-            tag (str): GFF3 attribute to use as feature ID
+            feature (str): feature identifier
         """
-        try:
-            ident = entry.attributes[tag]
-        except KeyError:
-            raise
+        pos_ident = "{}_{}".format(feature, len(self.cargo) + 1)
 
-        new_ident = "{}_{}".format(ident, len(self.cargo)+1)
-
-        self.cargo[new_ident] = (entry.strand, entry.start, entry.end)
+        self.cargo[pos_ident] = (entry.strand, entry.start, entry.end)
 
     def positional_ids(self, name):
         """Extract internal positional IDs
@@ -252,7 +247,7 @@ def increment_occurrence(co_res, contig, set1, set2, dist=None, outall=False):
     int1 = features.intersection(set1)
     int2 = features.intersection(set2)
 
-    if dist:
+    if dist and contig.seqid:
         output_dist(dist, contig, int1, int2, outall)
 
     # Match intersection results to appropriate locations in occurrence table
@@ -395,7 +390,7 @@ def main():
 
     # Output header for distributions file
     if out_d:
-        header = "#Set1\tSet2\tSeqID\tSeqLength\tMinDistance\tNumFeatures\n"
+        header = "Set1\tSet2\tSeqID\tSeqLength\tMinDistance\tNumFeatures\n"
         write_io(out_d, header)
 
     # Iterate over GFF3 file
@@ -412,10 +407,14 @@ def main():
             feature = entry.attributes[attr_tag]
         except KeyError:  #feature doesn't have proper attribute tag
             no_attr += 1
-            continue
+            if all_len:
+                feature = "UNKNOWN"
+            else:
+                continue
          
         seqid = entry.seqid
-        if seqid != giv.seqid:  #new contig encountered
+        old_seqid = giv.seqid
+        if seqid != old_seqid:  #new contig encountered
             # Process previous genomic region
             co_res = increment_occurrence(co_res, giv, set1, set2, out_d, \
                 all_len) 
@@ -434,7 +433,7 @@ def main():
             ncontigs += 1
 
         # Add feature as cargo to the genomic region
-        giv.parse_gff(entry, attr_tag)
+        giv.parse_gff(entry, feature)
 
     # Process last contig
     co_res = increment_occurrence(co_res, giv, set1, set2, out_d, all_len)
@@ -445,13 +444,15 @@ def main():
         output = "{}\t{!s}\n".format(row_name, \
             "\t".join([str(i) for i in co_res[row_num]]))
         write_io(out_h, output)
-
+    
     # Output statistics
     print("", file=sys.stderr)
     print("Contigs processed:", file=sys.stderr)
     print("  - contig totals:\t{!s}".format(ncontigs), file=sys.stderr)
     print("  - feature totals:\t{!s}".format(nfeatures), file=sys.stderr)
     print("  - features without attribute:\t{!s}".format(no_attr), file=sys.stderr)
+    print("  - total instances of co-occurrence:\t{!s}".format(co_res.sum()), \
+        file=sys.stderr)
 
     # Calculate and print program run-time
     end_time = time()
