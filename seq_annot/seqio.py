@@ -93,11 +93,11 @@ class Homolog:
 
         elif isinstance(entry, HMMEntry):
             if reverse_query:
-                self.seqid = entry.tacc if entry.tacc else entry.target
-                self.dbid = entry.qacc if entry.qacc else entry.query
+                self.seqid = entry.target
+                self.dbid = entry.query
             else:
-                self.seqid = entry.qacc if entry.qacc else entry.query
-                self.dbid = entry.tacc if entry.tacc else entry.target
+                self.seqid = entry.query
+                self.dbid = entry.target
             if domain:
                 self.evalue = entry.dom_evalue
                 self.score = entry.dom_score
@@ -215,7 +215,7 @@ class HMMReader():
         self.current_line = 0
 
     def iterate(self, start_line=None, comments: bool=False):
-        """Iterate over HMMER tblout file and return single hits
+        """Iterate over HMMER tblout file, returning single hits
 
         Args:
             start_line (str): Next HMM entry. If 'handle' has been partially
