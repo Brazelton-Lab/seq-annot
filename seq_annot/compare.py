@@ -54,7 +54,7 @@ __author__ = 'Christopher Thornton'
 __license__ = 'GPLv3'
 __maintainer__ = 'Christopher Thornton'
 __status__ = "Alpha"
-__version__ = '0.5.0'
+__version__ = '0.5.1'
 
 
 def occurrence(values: list):
@@ -139,8 +139,15 @@ def main():
     else:
         method = sum
 
-    colnames = args.names if args.names else [os.path.basename(i) for i \
-                   in args.csvs]
+    if args.method == "add":
+        if args.names:
+            print("warning: argument -n/--names ignored when combining method "
+                "is set to 'add'", file=sys.stderr)
+        colnames = []
+    else:
+        colnames = args.names if args.names else [os.path.basename(i) for i \
+            in args.csvs]
+
     rownames = args.features
 
     # Combine feature abundances
@@ -148,6 +155,20 @@ def main():
     abundances = OrderedDict()
     for position, infile in enumerate(infiles):
         with open_io(infile, mode='rb') as in_h:
+            # Check column headers when method is 'add'
+            if not method:
+                header = in_h.readline()
+                header = header.decode('utf-8')
+                header = header.rstrip().split('\t')[1:]
+                if colnames:
+                    if header != colnames:
+                        print("{}, line 0: file headers must match whenever "
+                            "combining methid is set to 'add'"\
+                            .format(csv_file), file=sys.stderr)
+                        sys.exit(1)
+                else:
+                    colnames = header
+
             for nline, row in enumerate(in_h):
 
                 row = row.decode('utf-8')
@@ -162,7 +183,7 @@ def main():
                 try:
                     name, values = row[0], row[1:]
                 except ValueError:
-                    raise FormatError("{}: line {}. Incorrect number of "
+                    raise FormatError("{}, line {!s}: Incorrect number of "
                         "columns provided. Please verify file format"\
                         .format(csv_file, nline))
 
@@ -174,7 +195,7 @@ def main():
                 try:
                     values = [float(j) for j in values]
                 except ValueError:
-                    raise FormatError("{}: line {}. Variables should only "
+                    raise FormatError("{}, line {!s}: Variables should only "
                         "contain numerical values".format(infile, nline))
 
                 if method:
@@ -195,11 +216,11 @@ def main():
                     except KeyError:
                         abundances[name] = values
                     except ValueError:
-                        raise FormatError("{}: line {}. Input tables have "
+                        raise FormatError("{}, line {!s}: Input tables have "
                             "unequal dimensions".format(infile, nline))
 
     # Output header
-    header = "#ID\t{}\n".format('\t'.join(colnames))
+    header = "ID\t{}\n".format('\t'.join(colnames))
     write_io(out_h, header)
 
     # Output feature abundances by sample
