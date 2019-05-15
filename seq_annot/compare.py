@@ -54,7 +54,7 @@ __author__ = 'Christopher Thornton'
 __license__ = 'GPLv3'
 __maintainer__ = 'Christopher Thornton'
 __status__ = "Alpha"
-__version__ = '0.5.1'
+__version__ = '0.5.2'
 
 
 def occurrence(values: list):
@@ -231,7 +231,7 @@ def main():
 
     # Output statistics
     f_totals = len(abundances)
-    s_totals = len(colnames)
+    s_totals = len(infiles)
     print("", file=sys.stderr)
     print("Features processed:", file=sys.stderr)
     print("  - samples merged:\t{!s}".format(s_totals), file=sys.stderr)
