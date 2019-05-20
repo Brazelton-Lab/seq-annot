@@ -45,7 +45,29 @@ __author__ = 'Christopher Thornton'
 __license__ = 'GPLv3'
 __maintainer__ = 'Christopher Thornton'
 __status__ = "Alpha"
-__version__ = '0.4.1'
+__version__ = '0.4.2'
+
+
+def parse_mod_args(argument, modtype):
+    """Parse input arguments provided to extend, append, and prepend.
+
+    Returns:
+        mod_fields (list): list of tuples containing fields and value pairs, 
+            in addition to the type of modification to make
+    """
+    mod_fields = []
+    for arg_input in argument:
+        try:
+            field, value = arg_input.split(':', 1)
+        except ValueError:
+            print("warning: unable to parse input {} provided to "
+                "--{}. See --help for usage".format(arg_input, modtype), \
+                file=sys.stderr)
+            continue
+
+        mod_fields.append((field, value, modtype))
+
+    return mod_fields
 
 
 def main():
@@ -115,6 +137,27 @@ def main():
         sep=',',
         help="comma-separated list of fields from the relational database to "
              "be included in the output")
+    output_group.add_argument('-e', '--extend',
+        metavar='FIELD:VALUE',
+        dest='extend',
+        action='append',
+        help="add field with static value to entries in the relational "
+            "database (e.g. database:KEGG). Can provide multiple field-value "
+            "pairs through repeated use of the argument")
+    output_group.add_argument('-a', '--append',
+        metavar='FIELD:VALUE',
+        dest='append',
+        action='append',
+        help="Modify the value of a field by appending additional text to it. "
+             "Can provide multiple field-value pairs through repeated use of "
+             "the argument")
+    output_group.add_argument('-p', '--prepend',
+        metavar='FIELD:VALUE',
+        dest='prepend',
+        action='append',
+        help="Modify the value of a field by prepending additional text to it. "
+             "Can provide multiple field-value pairs through repeated use of "
+             "the argument")
     output_group.add_argument('--out-csv',
         dest='out_csv',
         action='store_true',
@@ -138,6 +181,11 @@ def main():
     # Track program run-time
     start_time = time()
 
+    # Speedup tricks
+    list_type = type(list())
+    str_type = type(str())
+
+
     # Assign variables based on user input
     out_h = args.out
     as_csv = args.out_csv
@@ -146,6 +194,10 @@ def main():
     ids = args.ids
 
     cs = True if args.match_cs else False
+
+    static_fields = parse_mod_args(args.extend, 'extend') if args.extend else []
+    append_fields = parse_mod_args(args.append, 'append') if args.append else []
+    prepend_fields = parse_mod_args(args.prepend, 'prepend') if args.prepend else []
 
     fields = args.fields if args.fields else []
     merge_field = [args.dup_field] if args.dup_field else []
@@ -194,6 +246,55 @@ def main():
     # Merge database entries by field or file
     if merge:
         mapping = derep_algo(mapping, by)
+
+    # Add or modify fields per user request
+    all_mod = static_fields + append_fields + prepend_fields
+    if all_mod:
+        for entry_id in mapping:
+            entry = mapping[entry_id]
+
+            for mod in all_mod:
+                field, value, modtype = mod
+
+                # Extend entry by adding static fields
+                if modtype == 'extend':
+                    if field not in entry:
+                        entry[field] = value
+                    else:
+                        print("warning: cannot extend entry with {}. Entry {} "
+                            "already contains a value for field {}"\
+                            .format(arg_input, entry_id, field), \
+                            file=sys.stderr)
+
+                # Append text to existing field values
+                elif modtype == 'append':
+                    try:
+                        fvalue = entry[field]
+                    except KeyError:
+                        continue
+
+                    ftype = type(fvalue)
+                    if ftype == str_type:
+                        entry[field] = '{}{}'.format(fvalue, value)
+                    elif ftype == list_type:
+                        entry[field] = fvalue + [value]
+                    else:
+                        continue
+
+                # Prepend text to existing field values
+                elif modtype == 'prepend':
+                    try:
+                        fvalue = entry[field]
+                    except KeyError:
+                        continue
+
+                    ftype = type(fvalue)
+                    if ftype == str_type:
+                        entry[field] = '{}{}'.format(value, fvalue)
+                    elif ftype == list_type:
+                        entry[field] = [value] + fvalue
+                    else:
+                        continue
 
     # Output modified database
     if as_csv:
