@@ -33,12 +33,12 @@ Copyright:
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 """
 
-from arandomness.argparse import Open, ParseSeparator
 import argparse
 from bio_utils.iterators import B6Reader
 import json
 import os
 import re
+from seq_annot.argparse import *
 from seq_annot.db import load_dbs
 from seq_annot.seqio import write_io
 import sys
@@ -49,7 +49,7 @@ __author__ = "Christopher Thornton"
 __license__ = 'GPLv3'
 __maintainer__ = 'Christopher Thornton'
 __status__ = "Alpha"
-__version__ = "0.4.5"
+__version__ = "0.4.6"
 
 
 def screen_aln_quality(hit, evalue=10, identity=0, length=0, score=0):

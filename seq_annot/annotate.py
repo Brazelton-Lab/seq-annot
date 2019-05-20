@@ -3,8 +3,8 @@
 Annotate a GFF3 file of putative protein-coding genes using the results of a 
 homology search to a database of genes with known or predicted function.
 
-Required input is a GFF3 file of predicted protein-coding genes and a tabular 
-file of pairwise alignments (B6/HMMER format). Optional input is a relational 
+Required input is a GFF3 file of predicted protein-coding genes and one or 
+more pairwise alignments in B6 or HMMER format. Optional input is a relational 
 database in JSON format containing additional information on a database entry. 
 The dataset IDs in the alignment file must match their corresponding value in 
 the ID attribute of the GFF.
@@ -12,7 +12,8 @@ the ID attribute of the GFF.
 The compression algorithm is automatically detected for input files based on 
 the file extension. To compress output, add the appropriate file extension to 
 the output file name (e.g. .gz, .bz2). Leave off '--out' to direct output to 
-standard output (stdout). Input is taken from standard input (sdtin) by default.
+standard output (stdout). Standard input (stdin) can be redirected to the 
+positional argument if supplied with '-'.
 
 Copyright:
 
@@ -35,10 +36,10 @@ Copyright:
 
 from __future__ import print_function
 
-from arandomness.argparse import Open, ParseSeparator
 import argparse
 from bio_utils.iterators import B6Reader, GFF3Reader
 import json
+from seq_annot.argparse import *
 from seq_annot.db import load_dbs
 from seq_annot.seqio import *
 import sys
@@ -49,7 +50,7 @@ __author__ = "Christopher Thornton"
 __license__ = 'GPLv3'
 __maintainer__ = 'Christopher Thornton'
 __status__ = "Alpha"
-__version__ = "0.5.5"
+__version__ = "0.5.7"
 
 
 def do_nothing(*args):
@@ -58,13 +59,10 @@ def do_nothing(*args):
 def main():
     parser = argparse.ArgumentParser(description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('gff',
+    parser.add_argument('in_gff',
         metavar='in.gff',
-        action=Open,
-        mode='rb',
-        default=sys.stdin,
-        help="input feature predictions in GFF3 format [default: input from "
-            "stdin]")
+        help="input feature predictions in GFF3 format. Use '-' to indicate "
+             "that input should be taken from standard input (stdin)")
     parser.add_argument('-b', '--hits',
         metavar='in.aln [,in.aln,...]',
         action=ParseSeparator,
@@ -199,6 +197,11 @@ def main():
     out_log = args.log.write if args.log else do_nothing
     out_log("#Kept\tDiscarded\tReason\n".encode('utf-8'))
 
+    if args.in_gff == '-':
+        in_gff = sys.stdin
+    else:
+        in_gff = args.in_gff
+
     id_attr = args.id
     aln_format = args.aln_format
     map_fields = [i for i in args.fields if i != "Alias"] \
@@ -282,7 +285,7 @@ def main():
     no_map = 0  #track hits without an entry in the relational database
     no_id = 0  #track GFF3 entries without ID attribute to link to protein seq
 
-    gff_reader = GFF3Reader(args.gff)
+    gff_reader = GFF3Reader(in_gff)
     for entry in gff_reader.iterate(parse_attr=True, headers=True):
         try:
             seq_id = entry.seqid

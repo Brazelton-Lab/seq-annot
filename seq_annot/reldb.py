@@ -31,10 +31,10 @@ Copyright:
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 """
 
-from arandomness.argparse import Open, ParseSeparator
 import argparse
 import json
 import os
+from seq_annot.argparse import *
 from seq_annot.db import *
 from seq_annot.seqio import open_io, write_io
 import sys
@@ -45,7 +45,7 @@ __author__ = 'Christopher Thornton'
 __license__ = 'GPLv3'
 __maintainer__ = 'Christopher Thornton'
 __status__ = "Alpha"
-__version__ = '0.4.2'
+__version__ = '0.4.3'
 
 
 def parse_mod_args(argument, modtype):

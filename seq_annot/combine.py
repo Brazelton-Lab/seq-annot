@@ -35,10 +35,10 @@ Copyright:
 
 from __future__ import print_function
 
-from arandomness.argparse import Open
 import argparse
 from bio_utils.iterators import GFF3Reader
 import os
+from seq_annot.argparse import *
 from seq_annot.seqio import open_io, write_io
 import sys
 import textwrap
@@ -48,7 +48,7 @@ __author__ = 'Christopher Thornton'
 __license__ = 'GPLv3'
 __maintainer__ = 'Christopher Thornton'
 __status__ = "Alpha"
-__version__ = '0.2.0'
+__version__ = '0.2.1'
 
 
 def do_nothing(args):
