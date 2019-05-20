@@ -36,12 +36,12 @@ Copyright:
 from __future__ import print_function
 from __future__ import division
 
-from arandomness.argparse import Open,ParseSeparator
 import argparse
 import HTSeq
 import itertools
 import json
 import os
+from seq_annot.argparse import *
 from seq_annot.seqio import open_io, write_io
 from statistics import mean
 import sys
@@ -52,7 +52,7 @@ __author__ = 'Christopher Thornton'
 __license__ = 'GPLv3'
 __maintainer__ = 'Christopher Thornton'
 __status__ = "Beta"
-__version__ = '1.5.7'
+__version__ = '1.5.8'
 
 
 class UnknownChrom(Exception):

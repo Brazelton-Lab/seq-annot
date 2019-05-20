@@ -37,10 +37,10 @@ Copyright:
 from __future__ import print_function
 from __future__ import division
 
-from arandomness.argparse import Open,ParseSeparator
 import argparse
 from bio_utils.iterators import fasta_iter, GFF3Reader
 import numpy as np
+from seq_annot.argparse import *
 from seq_annot.seqio import open_io, write_io, FormatError
 import sys
 import textwrap
@@ -50,7 +50,7 @@ __author__ = 'Christopher Thornton'
 __license__ = 'GPLv3'
 __maintainer__ = 'Christopher Thornton'
 __status__ = "Beta"
-__version__ = '0.2.4'
+__version__ = '0.2.5'
 
 
 class GenomicRegion:
@@ -379,7 +379,8 @@ def parse_sets(arg_in):
 def parse_set_entry():
     """
     """
-    return(entry)
+    pass
+#    return(entry)
 
 def do_nothing(*args, **kargs):
     return(1)
@@ -410,8 +411,6 @@ def main():
     parser.add_argument('-f', '--fasta',
         dest='in_fasta',
         metavar='in.fa',
-        action=Open,
-        mode='rb',
         help="input optional fasta file of contigs for calculation of contig "
              "lengths")
     parser.add_argument('-o', '--out',
@@ -466,7 +465,7 @@ def main():
     attr_tag = args.attr
     all_len = args.all
 
-    out_h = args.out 
+    out_h = args.out
     out_d = args.out_dist
 
     if args.in_gff == '-':
@@ -486,8 +485,9 @@ def main():
     # Calculate and store contig lengths
     len_dist = {}
     if args.in_fasta:
-        for record in fasta_iter(args.in_fasta):
-            len_dist[record.id] = len(record.sequence)
+        with open_io(args.in_fasta, mode='rb') as fasta_h:
+            for record in fasta_iter(fasta_h):
+                len_dist[record.id] = len(record.sequence)
 
     # Populate sets with elements from the CSV file
     set1 = parse_sets(in_set1)

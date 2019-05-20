@@ -38,12 +38,12 @@ Copyright:
 
 from __future__ import print_function
 
-from arandomness.argparse import Open, ParseSeparator
 import argparse
 from collections import OrderedDict
 import json
 import numpy as np
 import os
+from seq_annot.argparse import *
 from seq_annot.seqio import open_io, write_io, FormatError
 from statistics import mean, median
 import sys
@@ -54,7 +54,7 @@ __author__ = 'Christopher Thornton'
 __license__ = 'GPLv3'
 __maintainer__ = 'Christopher Thornton'
 __status__ = "Alpha"
-__version__ = '0.5.2'
+__version__ = '0.5.3'
 
 
 def occurrence(values: list):
