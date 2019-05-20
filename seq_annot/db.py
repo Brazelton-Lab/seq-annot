@@ -7,11 +7,11 @@ import re
 from seq_annot.seqio import open_io, InputError, FormatError
 import sys
 
-def load_dbs(infiles:list, fields:list=None, csv:bool=False):
+def load_dbs(infiles, fields:list=None, csv:bool=False):
     """Load relational databases into memory
 
     Args:
-        infiles (list): list of input relational databases in JSON format
+        infiles (list|str): list of input relational databases in JSON format
 
         fields (list): list of fields to load [default: load all]
 
@@ -22,6 +22,9 @@ def load_dbs(infiles:list, fields:list=None, csv:bool=False):
     Returns:
         dict: relational database loaded as a dictionary
     """
+
+    if type(infiles) == type(str()):
+        infiles = [infiles]
 
     mapping = {}
     for map_file in infiles:
@@ -57,7 +60,7 @@ def load_dbs(infiles:list, fields:list=None, csv:bool=False):
                 keep = [header.index(i) for i in fields]
             except ValueError:  #field not in header
                 bad_fields = ', '.join(set(fields).difference(header))
-                raise InputError("{}: line 1. Provided field(s) '{}' not "
+                raise InputError("{}, line 1: Provided field(s) '{}' not "
                     "found in the file header".format(map_file, bad_fields))
 
             # Add entries to DB one per line
@@ -67,7 +70,7 @@ def load_dbs(infiles:list, fields:list=None, csv:bool=False):
                 try:
                     mapping[acc] = {header[i]:line[i] for i in keep}
                 except IndexError:
-                    raise FormatError("{}: line {}. The number of fields in "
+                    raise FormatError("{}, line {}: The number of fields in "
                     "the row do not match the number of fields in the header"\
                     .format(map_file, nline + 1))
 
