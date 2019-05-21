@@ -50,7 +50,7 @@ __author__ = "Christopher Thornton"
 __license__ = 'GPLv3'
 __maintainer__ = 'Christopher Thornton'
 __status__ = "Alpha"
-__version__ = "0.5.7"
+__version__ = "0.5.8"
 
 
 def do_nothing(*args):
@@ -200,7 +200,7 @@ def main():
     if args.in_gff == '-':
         in_gff = sys.stdin
     else:
-        in_gff = args.in_gff
+        in_gff = open_io(args.in_gff, mode='rb')
 
     id_attr = args.id
     aln_format = args.aln_format
