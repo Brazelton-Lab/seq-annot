@@ -45,7 +45,7 @@ __author__ = 'Christopher Thornton'
 __license__ = 'GPLv3'
 __maintainer__ = 'Christopher Thornton'
 __status__ = "Alpha"
-__version__ = '0.4.3'
+__version__ = '0.4.4'
 
 
 def parse_mod_args(argument, modtype):
@@ -256,43 +256,31 @@ def main():
             for mod in all_mod:
                 field, value, modtype = mod
 
-                # Extend entry by adding static fields
-                if modtype == 'extend':
-                    if field not in entry:
+                try:
+                    fvalue = entry[field]
+                except KeyError:
+                    # Extend entry by adding static fields
+                    if modtype == 'extend':
                         entry[field] = value
                     else:
-                        print("warning: cannot extend entry with {}. Entry {} "
-                            "already contains a value for field {}"\
-                            .format(arg_input, entry_id, field), \
-                            file=sys.stderr)
-
-                # Append text to existing field values
-                elif modtype == 'append':
-                    try:
-                        fvalue = entry[field]
-                    except KeyError:
+                        continue
+                else:
+                    # Don't append or prepend to NA's
+                    if fvalue == 'NA':
                         continue
 
+                    # Prepend or append text to existing field values
                     ftype = type(fvalue)
                     if ftype == str_type:
-                        entry[field] = '{}{}'.format(fvalue, value)
+                        if modtype == 'append':
+                            entry[field] = '{}{}'.format(fvalue, value)
+                        elif modtype == 'prepend':
+                            entry[field] = '{}{}'.format(value, fvalue)
                     elif ftype == list_type:
-                        entry[field] = fvalue + [value]
-                    else:
-                        continue
-
-                # Prepend text to existing field values
-                elif modtype == 'prepend':
-                    try:
-                        fvalue = entry[field]
-                    except KeyError:
-                        continue
-
-                    ftype = type(fvalue)
-                    if ftype == str_type:
-                        entry[field] = '{}{}'.format(value, fvalue)
-                    elif ftype == list_type:
-                        entry[field] = [value] + fvalue
+                        if modtype == 'append':
+                            entry[field] = fvalue + [value]
+                        elif modtype == 'prepend':
+                            entry[field] = [value] + fvalue
                     else:
                         continue
 
