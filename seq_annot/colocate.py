@@ -39,9 +39,10 @@ from __future__ import division
 
 import argparse
 from bio_utils.iterators import fasta_iter, GFF3Reader
+import logging
 import numpy as np
 from seq_annot.argparse import *
-from seq_annot.seqio import open_io, write_io, FormatError
+from seq_annot.seqio import *
 import sys
 import textwrap
 from time import time
@@ -50,7 +51,7 @@ __author__ = 'Christopher Thornton'
 __license__ = 'GPLv3'
 __maintainer__ = 'Christopher Thornton'
 __status__ = "Beta"
-__version__ = '0.2.5'
+__version__ = '0.3.1'
 
 
 class GenomicRegion:
@@ -224,9 +225,9 @@ def output_dist(handle, giv, set1, set2, outall=False):
 
         giv (class): GenomicRegion object containing co-occurring features
 
-        set1 (list): list of elements within set1
+        set1 (list): list of elements in set1
 
-        set2 (list): list of elements within set2
+        set2 (list): list of elements in set2
 
         outall (bool): output distributions for all genomic regions in GFF, not
             just for regions containing set elements [default: False]
@@ -243,21 +244,12 @@ def output_dist(handle, giv, set1, set2, outall=False):
     if not seqid:
         return(1)
 
-    # Populate lists of features found in either or both sets
-    idents1 = []
-    idents2 = []
-    for feature_id in cargo:
-        feature = feature_id.split("_", 1)[0]
-        if feature in set1:
-            idents1.append(feature_id)
-        if feature in set2:
-            idents2.append(feature_id)
-
-    if idents1 and idents2:  #contains elements from both sets
+    int1, int2 = find_intersection(giv, set1, set2)
+    if int1 and int2:  #contains elements from both sets
         used_ids = []
-        for el1 in idents1:
+        for el1 in int1:
             name1, id1 = el1.split("_", 1)
-            for el2 in idents2:
+            for el2 in int2:
                 if el1 == el2:  #happens when sets intersection non-empty
                     continue
 
@@ -275,15 +267,15 @@ def output_dist(handle, giv, set1, set2, outall=False):
 
             used_ids.append(id1)
 
-    elif idents1 and not idents2:  #contains elements only from first set
-        for el1 in idents1:
+    elif int1 and not int2:  #contains elements only from first set
+        for el1 in int1:
             name = el1.split("_", 1)[0]
             output = "{}\tNA\t{}\t{!s}\tNA\t{!s}\n".format(name, seqid, \
                 length, ncargo)
             write_io(handle, output)
 
-    elif idents2 and not idents1:  #contains elements only from secondary set
-        for el2 in idents2:
+    elif int2 and not int1:  #contains elements only from secondary set
+        for el2 in int2:
             name = el2.split("_", 1)[0]
             output = "NA\t{}\t{}\t{!s}\tNA\t{!s}\n".format(name, seqid, \
                 length, ncargo)
@@ -297,45 +289,68 @@ def output_dist(handle, giv, set1, set2, outall=False):
 
     return(0)  #writes successful
 
-def increment_occurrence(occur, giv, set1, set2):
-    """Find instances of co-occurrence between set elements
+def increment_occurrence(occur, giv, set1, set2, symmetric=False):
+    """Increment co-occurrence table
 
     Args:
         occur (Array): numpy Array containing incidences of co-occurrence
 
         giv (class): GenomicRegion object containing co-occurring features
 
-        set1 (list): list of elements within set1
+        set1 (list): list of set1 elements
 
-        set2 (list): list of elements within set2
+        set2 (list): list of set2 elements
+
+        symmetric (bool): generate symmetric matrix when identical elements 
+            can be found in both sets [default: False]
 
     Returns:
         occur (Array): numpy Array incremented by the number instances of 
             co-occurrence
     """
-    
-    # Convert feature positional IDs back to standard name
-    features = [i.rsplit("_", 1)[0] for i in giv.cargo.keys()]
+    int1, int2 = find_intersection(giv, set1, set2)
 
-    # Find intersection between elements in set1 and features on the region
-    int1 = set(features).intersection(set1)
+    if int1 and int2:  #contains elements from both sets
+        used_ids = []
+        for el1 in int1:
+            name1, id1 = el1.split("_", 1)
+            r = set1.index(name1)
+            for el2 in int2:
+                if el1 == el2:  #don't count same feature
+                    continue
 
-    # Match intersection results to appropriate locations in co-occurrence table
-    row_pos = []
-    for i in int1:
-        row_pos.append(set1.index(i))
-        features.remove(i)
+                name2, id2 = el2.split("_", 1)
+                if id2 in used_ids:  #sets intersection non-empty
+                    if not symmetric:
+                        continue
 
-    # Find intersection between elements in set2 and remaining features
-    int2 = set(features).intersection(set2)
-    col_pos = [set2.index(j) for j in int2] if int2 else []
+                c = set2.index(name2)
 
-    # Increment co-occurrence table by row and column coordinates
-    for r in row_pos:
-        for c in col_pos:
-            occur[r][c] += 1
+                occur[r][c] += 1
+
+            used_ids.append(id1)
 
     return(occur)
+
+def find_intersection(giv, set1, set2):
+    """Find the intersection between the set of cargo features contained 
+    within a genomic region and the input sets
+
+    Returns:
+        intersect (tuple) : tuple containing two lists of features with 
+            corresponding elements in the first and second set, respectively
+    """
+    intersect1 = []
+    intersect2 = []
+    # Populate lists of features found in either or both sets
+    for feature_id in giv.cargo:
+        feature = feature_id.split("_", 1)[0]
+        if feature in set1:
+            intersect1.append(feature_id)
+        if feature in set2:
+            intersect2.append(feature_id)
+
+    return((intersect1, intersect2))
 
 def parse_sets(arg_in):
     """Parse input to sets arguments. If input is a file, read in elements of 
@@ -382,7 +397,7 @@ def parse_set_entry():
     pass
 #    return(entry)
 
-def do_nothing(*args, **kargs):
+def do_nothing(*args, **kwargs):
     return(1)
 
 def main():
@@ -436,7 +451,14 @@ def main():
     parser.add_argument('--all',
         action='store_true',
         help="output lengths for all genomic regions in the GFF3 file, not "
-             "just regions containing set elements")
+        "just regions containing set elements [default: False]")
+    parser.add_argument('--symmetric',
+        action='store_true',
+        help="output a symmetric co-occurrence table when the first and second "
+            "sets contain some of the same elements [default: False]")
+    parser.add_argument('--verbose',
+        action='store_true',
+        help="increase output verbosity")
     parser.add_argument('--version',
         action='version',
         version='%(prog)s ' + __version__)
@@ -451,6 +473,9 @@ def main():
         parser.error("error: standard input (stdin) can only be redirected to "
             "a single positional argument")
 
+    # speed-up tricks
+    warn = logging.warning
+
     # Output run information
     all_args = sys.argv[1:]
     print("{} {!s}".format('colocate_features', __version__), file=sys.stderr)
@@ -464,6 +489,7 @@ def main():
     # Assign variables based on user inputs
     attr_tag = args.attr
     all_len = args.all
+    sym = args.symmetric
 
     out_h = args.out
     out_d = args.out_dist
@@ -481,6 +507,11 @@ def main():
     in_set2 = args.in_set2
 
     distribution = output_dist if out_d else do_nothing
+
+    if args.verbose:
+        logging.basicConfig(level=logging.WARNING)
+    else:
+        logging.basicConfig(level=logging.ERROR)
 
     # Calculate and store contig lengths
     len_dist = {}
@@ -521,6 +552,8 @@ def main():
             feature = entry.attributes[attr_tag]
         except KeyError:  #feature doesn't have proper attribute tag
             no_attr += 1
+            warn("record {} does not have attribute tag '{}'"\
+                .format(entry.seqid, attr_tag))
             if all_len:
                 feature = "UNKNOWN"
             else:
@@ -529,9 +562,8 @@ def main():
         seqid = entry.seqid
         old_seqid = giv.seqid
         if seqid != old_seqid:  #new contig encountered
-
             # Process previous genomic region
-            co_res = increment_occurrence(co_res, giv, set1, set2) 
+            co_res = increment_occurrence(co_res, giv, set1, set2, sym)
 
             # Output distributions
             ecode = distribution(out_d, giv, set1, set2, all_len)
@@ -553,8 +585,7 @@ def main():
         giv.parse_gff(entry, feature)
 
     # Process last contig
-    co_res = increment_occurrence(co_res, giv, set1, set2)
-
+    co_res = increment_occurrence(co_res, giv, set1, set2, sym) 
     ecode = distribution(out_d, giv, set1, set2, all_len)
 
     # Output co-occurrence table
