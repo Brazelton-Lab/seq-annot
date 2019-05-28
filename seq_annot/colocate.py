@@ -47,11 +47,14 @@ import sys
 import textwrap
 from time import time
 
+warn = logging.warning
+logging.basicConfig(level=logging.ERROR)
+
 __author__ = 'Christopher Thornton'
 __license__ = 'GPLv3'
 __maintainer__ = 'Christopher Thornton'
 __status__ = "Beta"
-__version__ = '0.3.1'
+__version__ = '0.3.6'
 
 
 class GenomicRegion:
@@ -66,8 +69,8 @@ class GenomicRegion:
         size (int): size of the genomic region in number of features predicted 
             to reside along its length
 
-        cargo (dict): dictionary of features with their location along the 
-            genomic region
+        cargo (dict): dictionary of features contained within the genomic 
+            region
     """
 
     def __init__(self):
@@ -97,15 +100,15 @@ class GenomicRegion:
         """
 
         try:
-            f1_strand, f1_start, f1_end = self.cargo[f1]
-            f2_strand, f2_start, f2_end = self.cargo[f2]
+            entry1 = self.cargo[f1]
+            entry2 = self.cargo[f2]
         except KeyError:
             raise
 
         # Determine stranding of the two features
-        if f1_strand == '+' and f2_strand == '+':
+        if entry1.strand == '+' and entry2.strand == '+':
             strand = '+'
-        elif f1_strand == '-' and f2_strand == '-':
+        elif entry1.strand == '-' and entry2.strand == '-':
             strand = '-'
         else:
             strand = '+/-'
@@ -116,8 +119,8 @@ class GenomicRegion:
         if self.overlap(f1, f2):  #overlapping features have zero distance
             return((strand, 0))
 
-        iv_1 = (f1_start, f1_end)
-        iv_2 = (f2_start, f2_end)
+        iv_1 = (entry1.start, entry1.end)
+        iv_2 = (entry2.start, entry2.end)
 
         # Calculate distance between features without regard to direction
         distance = min([abs(min(np.asarray(iv_1) - i)) for i in iv_2] + \
@@ -141,18 +144,18 @@ class GenomicRegion:
         """
 
         try:
-            f1_strand, f1_start, f1_end = self.cargo[f1]
-            f2_strand, f2_start, f2_end = self.cargo[f2]
+            entry1 = self.cargo[f1]
+            entry2 = self.cargo[f2]
         except KeyError:
             raise
 
         # Features can't be considered overlapping if on different strands
-        if stranded and ((f1_strand == '+' and f2_strand == '-') or \
-            (f1_strand == '-' and f2_strand == '+')):
+        if stranded and ((entry1.strand == '+' and entry2.strand == '-') or \
+            (entry1.strand == '-' and entry2.strand == '+')):
             return(False)
 
-        iv_1 = set(range(f1_start, f1_end + 1))
-        iv_2 = set(range(f2_start, f2_end + 1))
+        iv_1 = set(range(entry1.start, entry1.end + 1))
+        iv_2 = set(range(entry2.start, entry2.end + 1))
 
         if len(iv_1.intersection(iv_2)) > 0:
             return(True)
@@ -187,24 +190,11 @@ class GenomicRegion:
 #            (f1_strand == '-' and f2_strand == '+')):
 #            return(False)
 
-
-    def parse_gff(self, entry, feature):
-        """Populate dictionary of cargo features by parsing GFF3Entry objects
-
-        Args:
-            entry (class): GFF3Entry object
-
-            feature (str): feature identifier
-        """
-        pos_ident = "{}_{}".format(feature, len(self.cargo) + 1)
-
-        self.cargo[pos_ident] = (entry.strand, entry.start, entry.end)
-
     def positional_ids(self, name):
         """Extract internal positional IDs
 
         Args:
-            name (str): feature ID
+            name (str): name of a feature contained within the genomic region
 
         Returns:
             list: list of feature IDs with genomic position
@@ -216,8 +206,27 @@ class GenomicRegion:
 
         return(ids)
 
+    def add_cargo(self, entry, attr):
+        """Populate dictionary of cargo features by parsing GFF3Entry objects
 
-def output_dist(handle, giv, set1, set2, outall=False):
+        Args:
+            entry (class): GFF3Entry object
+
+            attr (str): attribute to use as the feature identifier
+        """
+        try:
+            feature = entry.attributes[attr]
+        except KeyError:  #feature doesn't have proper attribute tag
+            feature = "UNKNOWN"
+            warn("record {} does not have attribute tag '{}'"\
+                .format(entry.seqid, attr))
+
+        identifier = "{}_{}".format(feature, len(self.cargo) + 1)
+
+        self.cargo[identifier] = entry
+
+
+def output_dist(handle, giv, set1, set2, abunds={}, outall=False):
     """Write genomic region length and relative distance distributions to file
 
     Args:
@@ -229,6 +238,9 @@ def output_dist(handle, giv, set1, set2, outall=False):
 
         set2 (list): list of elements in set2
 
+        abunds (dist): optional dictionary of abundances for a given genomic 
+            feature
+
         outall (bool): output distributions for all genomic regions in GFF, not
             just for regions containing set elements [default: False]
 
@@ -237,14 +249,33 @@ def output_dist(handle, giv, set1, set2, outall=False):
     """
     length = giv.length
     seqid = giv.seqid
-    cargo = giv.cargo.keys()
-    ncargo = len(cargo)
+    cargo = giv.cargo
+    ncargo = len(cargo.keys())
 
     # Return 1 if unable to write to distributions file
     if not seqid:
         return(1)
 
     int1, int2 = find_intersection(giv, set1, set2)
+
+    # Create dictionary of abundances. NAs if abunds not provided
+    all_abunds = {}
+    for element in int1 + int2:
+        try:
+            feature_id = cargo[element].attributes['ID']
+        except KeyError:
+            warn("Feature {} on genomic region {} does not contain the 'ID' "
+                "attribute required for incorportaion of abundance"\
+                .format(element, cargo[element].seqid))
+            feature_id = 'NA'
+
+        try:
+            abund = abunds[feature_id]
+        except KeyError:
+            abund = 'NA'
+
+        all_abunds[element] = abund
+
     if int1 and int2:  #contains elements from both sets
         used_ids = []
         for el1 in int1:
@@ -260,9 +291,14 @@ def output_dist(handle, giv, set1, set2, outall=False):
                 # Find physical distance between elements
                 strand, distance = giv.distance(el1, el2)
 
+                # Find abundance of elements
+                abund1 = all_abunds[el1]
+                abund2 = all_abunds[el2]
+
                 # Output information for given instance of co-occurrence
-                output = "{}\t{}\t{}\t{!s}\t{!s}\t{!s}\n".format(name1, \
-                    name2, seqid, length, distance, ncargo)
+                output = "{}\t{}\t{!s}\t{!s}\t{}\t{!s}\t{!s}\t{!s}\n"\
+                    .format(name1, name2, abund1, abund2, seqid, length, \
+                    distance, ncargo)
                 write_io(handle, output)
 
             used_ids.append(id1)
@@ -270,20 +306,24 @@ def output_dist(handle, giv, set1, set2, outall=False):
     elif int1 and not int2:  #contains elements only from first set
         for el1 in int1:
             name = el1.split("_", 1)[0]
-            output = "{}\tNA\t{}\t{!s}\tNA\t{!s}\n".format(name, seqid, \
-                length, ncargo)
+            abund1 = all_abunds[el1]
+
+            output = "{}\tNA\t{!s}\tNA\t{}\t{!s}\tNA\t{!s}\n".format(name, \
+                abund1, seqid, length, ncargo)
             write_io(handle, output)
 
     elif int2 and not int1:  #contains elements only from secondary set
         for el2 in int2:
             name = el2.split("_", 1)[0]
-            output = "NA\t{}\t{}\t{!s}\tNA\t{!s}\n".format(name, seqid, \
-                length, ncargo)
+            abund2 = all_abunds[el2]
+
+            output = "NA\t{}\tNA\t{!s}\t{}\t{!s}\tNA\t{!s}\n".format(name, \
+                abund2, seqid, length, ncargo)
             write_io(handle, output)
 
     else:
         if outall:
-            output = "NA\tNA\t{}\t{!s}\tNA\t{!s}\n".format(seqid, length, \
+            output = "NA\tNA\tNA\tNA\t{}\t{!s}\tNA\t{!s}\n".format(seqid, length, \
                 ncargo)
             write_io(handle, output)
 
@@ -427,7 +467,17 @@ def main():
         dest='in_fasta',
         metavar='in.fa',
         help="input optional fasta file of contigs for calculation of contig "
-             "lengths")
+             "lengths. When provided, contig lengths will be added to the "
+             "output distributions file")
+    parser.add_argument('-c', '--count',
+        dest='in_count',
+        metavar='in.csv',
+        help="input optional tab-separated abundance file. The first column "
+            "should consist of feature identifiers with matching values in the "
+            "ID attribute of the GFF file. The second column should contain "
+            "numerical values representing some metric of abundance for the "
+            "corresponding feature. When provided, feature abundance will be "
+            "added to the output distributions file")
     parser.add_argument('-o', '--out',
         metavar='out.csv',
         action=Open,
@@ -455,7 +505,7 @@ def main():
     parser.add_argument('--symmetric',
         action='store_true',
         help="output a symmetric co-occurrence table when the first and second "
-            "sets contain some of the same elements [default: False]")
+            "sets have overlapping elements [default: False]")
     parser.add_argument('--verbose',
         action='store_true',
         help="increase output verbosity")
@@ -465,16 +515,13 @@ def main():
     args = parser.parse_args()
 
     # Argument sanity checks
-    if (args.out_dist and not args.in_fasta):
-        parser.error("error: argument -d/--out-dist must be supplied along "
-            "with -f/--fasta")
+    if (args.in_fasta or args.counts) and not args.out_dist:
+        parser.error("error: argument -d/--out-dist must be supplied whenever "
+            "arguments -f/--fasta or -c/--count are used")
 
     if args.in_set1 == '-' and args.in_gff == '-':
         parser.error("error: standard input (stdin) can only be redirected to "
             "a single positional argument")
-
-    # speed-up tricks
-    warn = logging.warning
 
     # Output run information
     all_args = sys.argv[1:]
@@ -510,8 +557,6 @@ def main():
 
     if args.verbose:
         logging.basicConfig(level=logging.WARNING)
-    else:
-        logging.basicConfig(level=logging.ERROR)
 
     # Calculate and store contig lengths
     len_dist = {}
@@ -519,6 +564,33 @@ def main():
         with open_io(args.in_fasta, mode='rb') as fasta_h:
             for record in fasta_iter(fasta_h):
                 len_dist[record.id] = len(record.sequence)
+
+    # Store feature abundance values if provided
+    abunds = {}
+    if args.in_count:
+        with open_io(args.in_count, mode='rb') as count_h:
+            for nline, row in enumerate(count_h):
+
+                row = row.decode('utf-8')
+
+                if row.startswith('#'):  #skip comments
+                    continue
+
+                row = row.rstrip().split('\t')
+
+                try:
+                    name, value = row
+                except ValueError:
+                    raise FormatError("{}, line {!s}: Incorrect number of "
+                        "columns provided. Please verify file format"\
+                        .format(in_count, nline))
+
+                if name not in abunds:
+                    abunds[name] = value
+                else:
+                    raise FormatError("{}, line {!s}: duplicate feature IDs "
+                        "encountered. IDs used in abundance file must be "
+                        "unique".format(in_count, nline))
 
     # Populate sets with elements from the CSV file
     set1 = parse_sets(in_set1)
@@ -535,7 +607,8 @@ def main():
 
     # Output header for distributions file
     if out_d:
-        header = "Set1\tSet2\tSeqID\tSeqLength\tMinDistance\tNumFeatures\n"
+        header = "Set1\tSet2\tAbund1\tAbund2\tSeqID\tSeqLength\tMinDistance\t"\
+            "NumFeatures\n"
         write_io(out_d, header)
 
     # Iterate over GFF3 file
@@ -548,41 +621,29 @@ def main():
     for entry in gff_reader.iterate(parse_attr=True):
         nfeatures += 1
 
-        try:
-            feature = entry.attributes[attr_tag]
-        except KeyError:  #feature doesn't have proper attribute tag
-            no_attr += 1
-            warn("record {} does not have attribute tag '{}'"\
-                .format(entry.seqid, attr_tag))
-            if all_len:
-                feature = "UNKNOWN"
-            else:
-                continue
-         
         seqid = entry.seqid
         old_seqid = giv.seqid
         if seqid != old_seqid:  #new contig encountered
+            ncontigs += 1
+
             # Process previous genomic region
             co_res = increment_occurrence(co_res, giv, set1, set2, sym)
 
             # Output distributions
-            ecode = distribution(out_d, giv, set1, set2, all_len)
+            ecode = distribution(out_d, giv, set1, set2, abunds, all_len)
 
             # Reset for new genomic region interval
             giv = GenomicRegion()
             giv.seqid = seqid
 
-            # Add contig length to GenomicRegion object
-            if out_d:
-                try:
-                    giv.length = len_dist[seqid]
-                except KeyError:
-                    giv.length = "NA"
-
-            ncontigs += 1
+            # Add contig length to new GenomicRegion object
+            try:
+                giv.length = len_dist[seqid]
+            except KeyError:
+                giv.length = "NA"
 
         # Add feature as cargo to the genomic region
-        giv.parse_gff(entry, feature)
+        giv.add_cargo(entry, attr_tag)
 
     # Process last contig
     co_res = increment_occurrence(co_res, giv, set1, set2, sym) 

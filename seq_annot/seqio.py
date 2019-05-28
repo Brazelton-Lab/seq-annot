@@ -298,7 +298,6 @@ class HMMReader():
             else:  #handle case where file ends in comment
                 pass
 
-
 def open_io(infile, **kwargs):
     """Open input files based on file extension for reading or writing
     """
