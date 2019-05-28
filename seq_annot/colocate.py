@@ -276,6 +276,11 @@ def output_dist(handle, giv, set1, set2, abunds={}, outall=False):
 
         all_abunds[element] = abund
 
+    # Handle case where completely overlapping sets and only one feature 
+    # encountered with a corresponding element in the sets
+    if int1 == int2 and len(int1) == 1:
+        int2 = []
+
     if int1 and int2:  #contains elements from both sets
         used_ids = []
         for el1 in int1:
