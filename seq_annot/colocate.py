@@ -54,7 +54,14 @@ __author__ = 'Christopher Thornton'
 __license__ = 'GPLv3'
 __maintainer__ = 'Christopher Thornton'
 __status__ = "Beta"
-__version__ = '0.3.6'
+__version__ = '0.4.3'
+
+class FeatureNotFound(Exception):
+    """A simple exception that is raised when an feature cannot be found on
+    a genomic region
+    """
+    def __init__(self,*args,**kwargs):
+        Exception.__init__(self,*args,**kwargs)
 
 
 class GenomicRegion:
@@ -62,12 +69,13 @@ class GenomicRegion:
     region
 
     Attributes:
-        seqid (str): ID of sequence (e.g. contig)
+        seqid (str): ID of the genomic region (e.g. contiguous sequence, 
+            scaffold, or genome)
 
         length (int): length of the genomic region in bp
 
         size (int): size of the genomic region in number of features predicted 
-            to reside along its length
+            along its length
 
         cargo (dict): dictionary of features contained within the genomic 
             region
@@ -81,55 +89,79 @@ class GenomicRegion:
         self.size = None
         self.cargo = {}
 
-    def distance(self, f1, f2, stranded: bool=True):
-        """Calculate the distance in bp between two features contained on the 
-        genomic region
+    def distance(self, f1, f2):
+        """Calculate the physical distance in bp between two features 
+        contained on the genomic region
 
         Args:
-            f1 (str): name of first feature
+            f1 (str): name of the first feature contained within the genomic 
+                region
 
-            f2 (str): name of second feature. Feature must already be
-
-            stranded (bool): consider features encoded on different strands 
-                [default: True]
+            f2 (str): name of the second feature contained within the genomic 
+                region
         
         Returns:
-            tuple: first element is the encoding strand (+/- if on separate 
-                strands). Second element is an integer representing distance 
-                between the features in bp
+            int: physical distance in base-pairs between the two features
         """
 
         try:
             entry1 = self.cargo[f1]
             entry2 = self.cargo[f2]
-        except KeyError:
-            raise
+        except KeyError as e:
+            raise FeatureNotFound("feature {} not found on genomic region {}"\
+                .format(e, self.seqid))
 
-        # Determine stranding of the two features
-        if entry1.strand == '+' and entry2.strand == '+':
-            strand = '+'
-        elif entry1.strand == '-' and entry2.strand == '-':
-            strand = '-'
-        else:
-            strand = '+/-'
+        if self.overlaps(f1, f2):  #overlapping features have zero distance
+            return(0)
 
-        if not stranded and strand == '+/-':
-            return((strand, "NA"))
+        iv1 = (entry1.start, entry1.end)
+        iv2 = (entry2.start, entry2.end)
 
-        if self.overlap(f1, f2):  #overlapping features have zero distance
-            return((strand, 0))
+        # Calculate distance between features
+        distance = min([abs(min(np.asarray(iv1) - i)) for i in iv2] + \
+            [abs(min(np.asarray(iv2) - i)) for i in iv1])
 
-        iv_1 = (entry1.start, entry1.end)
-        iv_2 = (entry2.start, entry2.end)
+        return(distance)
 
-        # Calculate distance between features without regard to direction
-        distance = min([abs(min(np.asarray(iv_1) - i)) for i in iv_2] + \
-            [abs(min(np.asarray(iv_2) - i)) for i in iv_1])
+    def bounds(self, f1, f2, stranded: bool=False):
+        """Determine if a genomic feature is bounded by another. A feature is 
+        considered bounded if its interval (determined by the start and end 
+        positions on the genomic region) is fully contained within the 
+        interval of another feature
 
-        return((strand, distance))
+        Args:
+            f1 (str): name of cargo feature possibly contained within the 
+                second
 
-    def overlap(self, f1, f2, stranded: bool=False):
-        """Determine if two features in a genomic region overlap
+            f2 (str): name of cargo feature possibly containing the first
+
+            stranded (bool): a feature cannnot be bounded by another if on 
+                different strands [default: False]
+
+        Returns:
+            bool: True if f1 is bounded by f2, else False
+        """
+
+        try:
+            entry1 = self.cargo[f1]
+            entry2 = self.cargo[f2]
+        except KeyError as e:
+            raise FeatureNotFound("feature {} not found on genomic region {}"\
+                .format(e, self.seqid))
+
+        # Determine if features reside on the same strand
+        if stranded and ((entry1.strand == '+' and entry2.strand == '-') or \
+            (entry1.strand == '-' and entry2.strand == '+')):
+            return(False)  #feature is unbounded if on different strands
+
+        iv1 = set(range(entry1.start, entry1.end + 1))
+        iv2 = set(range(entry2.start, entry2.end + 1))
+
+        return(iv1.issubset(iv2))
+
+    def overlaps(self, f1, f2, stranded: bool=False):
+        """Determine if the intervals of two features contained on a genomic 
+        region overlap
 
         Args:
             f1 (str): name of feature in genomic region
@@ -140,71 +172,44 @@ class GenomicRegion:
                 if on different strands [default: False]
 
         Returns:
-            bool: True if features overlap, else False
+            bool: True if the intervals of f1 and f2 overlap, else False
         """
 
         try:
             entry1 = self.cargo[f1]
             entry2 = self.cargo[f2]
-        except KeyError:
-            raise
+        except KeyError as e:
+            raise FeatureNotFound("feature {} not found on genomic region {}"\
+                .format(e, self.seqid))
 
-        # Features can't be considered overlapping if on different strands
+        # Determine if features reside on the same strand
         if stranded and ((entry1.strand == '+' and entry2.strand == '-') or \
             (entry1.strand == '-' and entry2.strand == '+')):
-            return(False)
+            return(False)  #features dont overlap if on different strands
 
-        iv_1 = set(range(entry1.start, entry1.end + 1))
-        iv_2 = set(range(entry2.start, entry2.end + 1))
+        iv1 = set(range(entry1.start, entry1.end + 1))
+        iv2 = set(range(entry2.start, entry2.end + 1))
 
-        if len(iv_1.intersection(iv_2)) > 0:
-            return(True)
-        else:
-            return(False)
+        return(len(iv1.intersection(iv2)) > 0)
 
-    def bounded(self, f1, f2, stranded: bool=False):
-        """Determine if a feature in a genomic region is bounded by 
+    def intersect(self, names):
+        """Find the intersection between the cargo features contained on the 
+        genomic region and a set of feature names
 
         Args:
-            f1 (str): name of feature in genomic region
-
-            f2 (str): name of different feature in genomic region
-
-            stranded (bool): a feature can only be bounded by others if on 
-                different strands  [default: False]
+            names (list): list of feature names
 
         Returns:
-            bool: True if features overlap, else False
+            list: cargo feature IDs with corresponding elements in names
         """
+        intersection = []
+        # Populate list of cargo features found in set names
+        for feature_id in self.cargo:
+            feature = feature_id.split("_", 1)[0]
+            if feature in names:
+                intersection.append(feature_id)
 
-        pass
-
-#        try:
-#            f1_strand, f1_start, f1_end = self.cargo[f1]
-#            f2_strand, f2_start, f2_end = self.cargo[f2]
-#        except KeyError:
-#            raise
-
-        # Features can't be considered overlapping if on different strands
-#        if stranded and ((f1_strand == '+' and f2_strand == '-') or \
-#            (f1_strand == '-' and f2_strand == '+')):
-#            return(False)
-
-    def positional_ids(self, name):
-        """Extract internal positional IDs
-
-        Args:
-            name (str): name of a feature contained within the genomic region
-
-        Returns:
-            list: list of feature IDs with genomic position
-        """
-        ids = []
-        for positional_id in self.cargo:
-            if positional_id.rsplit("_", 1)[0] == name:
-                ids.append(positional_id)
-
-        return(ids)
+        return(intersection)
 
     def add_cargo(self, entry, attr):
         """Populate dictionary of cargo features by parsing GFF3Entry objects
@@ -221,8 +226,10 @@ class GenomicRegion:
             warn("record {} does not have attribute tag '{}'"\
                 .format(entry.seqid, attr))
 
+        # Create unique identifier for feature
         identifier = "{}_{}".format(feature, len(self.cargo) + 1)
 
+        # Populate dictionary of cargo with new feature
         self.cargo[identifier] = entry
 
 
@@ -256,7 +263,8 @@ def output_dist(handle, giv, set1, set2, abunds={}, outall=False):
     if not seqid:
         return(1)
 
-    int1, int2 = find_intersection(giv, set1, set2)
+    int1 = giv.intersect(set1)
+    int2 = giv.intersect(set2)
 
     # Create dictionary of abundances. NAs if abunds not provided
     all_abunds = {}
@@ -294,16 +302,18 @@ def output_dist(handle, giv, set1, set2, abunds={}, outall=False):
                     continue
 
                 # Find physical distance between elements
-                strand, distance = giv.distance(el1, el2)
+                distance = giv.distance(el1, el2)
 
                 # Find abundance of elements
                 abund1 = all_abunds[el1]
                 abund2 = all_abunds[el2]
 
+                bounded = 'TRUE' if giv.bounds(el1, el2) else 'FALSE'
+
                 # Output information for given instance of co-occurrence
-                output = "{}\t{}\t{!s}\t{!s}\t{}\t{!s}\t{!s}\t{!s}\n"\
+                output = "{}\t{}\t{!s}\t{!s}\t{}\t{!s}\t{!s}\t{!s}\t{}\n"\
                     .format(name1, name2, abund1, abund2, seqid, length, \
-                    distance, ncargo)
+                    distance, ncargo, bounded)
                 write_io(handle, output)
 
             used_ids.append(id1)
@@ -313,7 +323,7 @@ def output_dist(handle, giv, set1, set2, abunds={}, outall=False):
             name = el1.split("_", 1)[0]
             abund1 = all_abunds[el1]
 
-            output = "{}\tNA\t{!s}\tNA\t{}\t{!s}\tNA\t{!s}\n".format(name, \
+            output = "{}\tNA\t{!s}\tNA\t{}\t{!s}\tNA\t{!s}\tNA\n".format(name,\
                 abund1, seqid, length, ncargo)
             write_io(handle, output)
 
@@ -322,19 +332,20 @@ def output_dist(handle, giv, set1, set2, abunds={}, outall=False):
             name = el2.split("_", 1)[0]
             abund2 = all_abunds[el2]
 
-            output = "NA\t{}\tNA\t{!s}\t{}\t{!s}\tNA\t{!s}\n".format(name, \
+            output = "NA\t{}\tNA\t{!s}\t{}\t{!s}\tNA\t{!s}\tNA\n".format(name,\
                 abund2, seqid, length, ncargo)
             write_io(handle, output)
 
     else:
         if outall:
-            output = "NA\tNA\tNA\tNA\t{}\t{!s}\tNA\t{!s}\n".format(seqid, length, \
-                ncargo)
+            output = "NA\tNA\tNA\tNA\t{}\t{!s}\tNA\t{!s}\tNA\n".format(seqid,\
+                length, ncargo)
             write_io(handle, output)
 
     return(0)  #writes successful
 
-def increment_occurrence(occur, giv, set1, set2, symmetric=False):
+def increment_occurrence(occur, giv, set1, set2, bounded=False, \
+    symmetric=False):
     """Increment co-occurrence table
 
     Args:
@@ -346,6 +357,10 @@ def increment_occurrence(occur, giv, set1, set2, symmetric=False):
 
         set2 (list): list of set2 elements
 
+        bounded (bool): in order to be considered co-occurring, a feature 
+            found in the first set must be bounded by a feature within the 
+            second set [default: False]
+
         symmetric (bool): generate symmetric matrix when identical elements 
             can be found in both sets [default: False]
 
@@ -353,7 +368,8 @@ def increment_occurrence(occur, giv, set1, set2, symmetric=False):
         occur (Array): numpy Array incremented by the number instances of 
             co-occurrence
     """
-    int1, int2 = find_intersection(giv, set1, set2)
+    int1 = giv.intersect(set1) 
+    int2 = giv.intersect(set2)
 
     if int1 and int2:  #contains elements from both sets
         used_ids = []
@@ -369,6 +385,11 @@ def increment_occurrence(occur, giv, set1, set2, symmetric=False):
                     if not symmetric:
                         continue
 
+                if bounded:  #el1 must be bounded by el2
+                    # Determine if el2 bounds el1
+                    if not giv.bounds(el1, el2):
+                        continue
+
                 c = set2.index(name2)
 
                 occur[r][c] += 1
@@ -377,30 +398,10 @@ def increment_occurrence(occur, giv, set1, set2, symmetric=False):
 
     return(occur)
 
-def find_intersection(giv, set1, set2):
-    """Find the intersection between the set of cargo features contained 
-    within a genomic region and the input sets
-
-    Returns:
-        intersect (tuple) : tuple containing two lists of features with 
-            corresponding elements in the first and second set, respectively
-    """
-    intersect1 = []
-    intersect2 = []
-    # Populate lists of features found in either or both sets
-    for feature_id in giv.cargo:
-        feature = feature_id.split("_", 1)[0]
-        if feature in set1:
-            intersect1.append(feature_id)
-        if feature in set2:
-            intersect2.append(feature_id)
-
-    return((intersect1, intersect2))
-
 def parse_sets(arg_in):
     """Parse input to sets arguments. If input is a file, read in elements of 
     the set line-by-line, otherwise assume set elements are separated by a 
-    comma.
+    comma
     """
     in_set = []
 
@@ -436,12 +437,6 @@ def parse_sets(arg_in):
 
     return(in_set)
 
-def parse_set_entry():
-    """
-    """
-    pass
-#    return(entry)
-
 def do_nothing(*args, **kwargs):
     return(1)
 
@@ -450,24 +445,23 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('in_gff',
         metavar='in.gff3',
-        help="input feature annotation file in GFF3 format. Use '-' to indicate "
+        help="input feature annotations in GFF3 format. Use '-' to indicate "
              "that input should be taken from standard input (stdin)")
     parser.add_argument('-s', '--set',
         required=True,
         dest='in_set1',
-        metavar='in.csv',
-        help="input primary feature sets file in CSV format. The file should "
-             "contain a line-separated list of genomic feature names. Lines "
-             "starting with '#' will be ignored. Use '-' to indicate that "
-             "input should be taken from standard input (stdin)")
+        metavar='SET1',
+        help="input primary feature sets as a file or comma-separated list. "
+             "If input is a file, set elements should be line-separated. "
+             "Use '-' to indicate that input should be taken from standard "
+             "input (stdin)")
     parser.add_argument('-s2', '--set2',
         dest='in_set2',
-        metavar='in.csv',
-        help="input optional supplementary feature sets file in CSV format. "
-             "The file should contain a line-separated list of genomic feature "
-             "names. Lines starting starting with '#' will be ignored. If "
-             "unused, co-occurrences will be found between elements within the "
-             "primary set")
+        metavar='SET2',
+        help="input optional supplementary feature sets as a file or "
+            "comma-separated list. If input is a file, set elements should be "
+            "line-separated. If unused, co-occurrences will be found between "
+            "elements within the primary set")
     parser.add_argument('-f', '--fasta',
         dest='in_fasta',
         metavar='in.fa',
@@ -511,6 +505,11 @@ def main():
         action='store_true',
         help="output a symmetric co-occurrence table when the first and second "
             "sets have overlapping elements [default: False]")
+    parser.add_argument('--bounded',
+        action='store_true',
+        help="increment co-occurrence table only if the interval of a feature "
+            "found in the first set is fully bounded by the interval of a "
+            "feature found in the second set [default: off]")
     parser.add_argument('--verbose',
         action='store_true',
         help="increase output verbosity")
@@ -542,6 +541,7 @@ def main():
     attr_tag = args.attr
     all_len = args.all
     sym = args.symmetric
+    bounded = args.bounded
 
     out_h = args.out
     out_d = args.out_dist
@@ -613,7 +613,7 @@ def main():
     # Output header for distributions file
     if out_d:
         header = "Set1\tSet2\tAbund1\tAbund2\tSeqID\tSeqLength\tMinDistance\t"\
-            "NumFeatures\n"
+            "NumFeatures\tBounded\n"
         write_io(out_d, header)
 
     # Iterate over GFF3 file
@@ -632,7 +632,7 @@ def main():
             ncontigs += 1
 
             # Process previous genomic region
-            co_res = increment_occurrence(co_res, giv, set1, set2, sym)
+            co_res = increment_occurrence(co_res, giv, set1, set2, bounded, sym)
 
             # Output distributions
             ecode = distribution(out_d, giv, set1, set2, abunds, all_len)
@@ -651,8 +651,8 @@ def main():
         giv.add_cargo(entry, attr_tag)
 
     # Process last contig
-    co_res = increment_occurrence(co_res, giv, set1, set2, sym) 
-    ecode = distribution(out_d, giv, set1, set2, all_len)
+    co_res = increment_occurrence(co_res, giv, set1, set2, bounded, sym) 
+    ecode = distribution(out_d, giv, set1, set2, abunds, all_len)
 
     # Output co-occurrence table
     write_io(out_h, "ID\t{}\n".format("\t".join(columns)))
