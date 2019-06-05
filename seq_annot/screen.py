@@ -12,7 +12,7 @@ threshold (e.g. bitscore thresholds).
 The compression algorithm is automatically detected for input files based on 
 the file extension. To compress output, add the appropriate file extension 
 to the output file name (e.g. .gz, .bz2). Use "-" indicate that input is from 
-standard input (stdin). Similarly, leave off '--out' to direct output to 
+standard input (stdin). Similarly, leave off "--out" to direct output to 
 standard output (stdout).
 
 Copyright:
@@ -52,7 +52,7 @@ __author__ = "Christopher Thornton"
 __license__ = 'GPLv3'
 __maintainer__ = 'Christopher Thornton'
 __status__ = "Alpha"
-__version__ = "0.5.1"
+__version__ = "0.5.3"
 
 
 class SubjectHSPs:
@@ -261,12 +261,9 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('b6',
         metavar='in.b6',
-        action=Open,
-        mode='rb',
-        default=sys.stdin,
         help="input best-hit alignments in B6/M8 format. The alignment format "
             "should be provided to -s/--specifiers if other than the default "
-            "BLAST+ tabular format")
+            "BLAST+ tabular format. Use '-' to accept input from stdin")
     parser.add_argument('-o', '--out',
         metavar='out.b6',
         action=Open,
@@ -390,6 +387,11 @@ def main():
     else:
         out_d = do_nothing
 
+    if args.b6 == '-':
+        b6 = sys.stdin
+    else:
+        b6 = open_io(args.b6, 'rb')
+
     mapping = load_dbs(args.map_file) if args.map_file else None
 
     specifiers = args.format
@@ -410,7 +412,7 @@ def main():
     hit_totals = 0  #all hits to a subject sequence in B6 file
 
     prev_hit = ''
-    b6_reader = B6Reader(args.b6)
+    b6_reader = B6Reader(b6)
     hit = SubjectHSPs()
     metrics = []
     for entry in b6_reader.iterate(header=specifiers):
