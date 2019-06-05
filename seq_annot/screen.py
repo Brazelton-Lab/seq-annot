@@ -407,6 +407,7 @@ def main():
     failed_quals = 0  #hits failed due to alignment quality
     failed_snps = 0  #hits failed due to SNP screening
     aln_totals = 0  #all alignments in B6 file
+    hit_totals = 0  #all hits to a subject sequence in B6 file
 
     prev_hit = ''
     b6_reader = B6Reader(args.b6)
@@ -418,6 +419,7 @@ def main():
         subject = entry.subject
         query = entry.query
         if query != hit.query:  #new query encountered
+            hit_totals += 1
 
             # Process previous query
             totals = screen_query(hit, out_h, out_d, metrics, default_only)
@@ -488,11 +490,11 @@ def main():
     # Output screening statistics
     print("", file=sys.stderr)
     print("Alignments processed:", file=sys.stderr)
+    print("  - hit totals:\t{!s}".format(hit_totals), file=sys.stderr)
     print("  - alignment totals:\t{!s}".format(aln_totals), file=sys.stderr)
-    print("  - passed screening:", file=sys.stderr)
-    print("    - passed totals:\t{!s}".format(passed_total), file=sys.stderr)
-    print("  - failed screening:", file=sys.stderr)
-    print("    - failed totals:\t{!s}".format(failed_quals + failed_snps), \
+    print("Screening results:", file=sys.stderr)
+    print(" - passed totals:\t{!s}".format(passed_total), file=sys.stderr)
+    print(" - failed totals:\t{!s}".format(failed_quals + failed_snps), \
         file=sys.stderr)
     if e_thresh or len_thresh or id_thresh or score_field or cov_thresh \
         or sim_thresh:
