@@ -110,7 +110,7 @@ class SubjectHSPs:
         evalue = min(e)
         bitscore = max(b)
         length = max(l)
-        identity = max(i)
+        identity = sum([i[pos] * l[pos] for pos in range(len(i))]) / sum(l)
 
         if cov_thresh:
             try:
@@ -126,9 +126,20 @@ class SubjectHSPs:
             cov = 1
 
         if sim_thresh:
-            sim = sum([i[pos] * l[pos] for pos in range(len(i))]) / sum(l)
+            try:
+                qlen = int(self.hsp[0].custom_fs['qlen'])
+            except KeyError:
+                raise FormatError("field specifier 'qlen' required when "
+                    "similarity threshold provided")
+            try:
+                cov = int(self.hsp[0].custom_fs['qcovs'])
+            except KeyError:
+                raise FormatError("field specifier 'qcovs' required when "
+                    "similarity threshold provided")
+
+            sim = (qlen * (cov/100) * (identity/100)) / qlen * 100
         else:
-            sim = 1
+            sim = identity
 
         try:
             passed = (evalue <= e_thresh and identity >= i_thresh and \
@@ -286,9 +297,7 @@ def main():
             "bitscore"],
         help="input ordered field specifiers [default: qaccver, saccver, "
             "pident, length, mismatch, gapopen, qstart, qend, sstart, send, "
-            "evalue, bitscore]. The additional field specifiers 'qseq' and "
-            "'sseq' are required when screening for SNPs and the specifier "
-            "'qcovs' is required when screening for coverage")
+            "evalue, bitscore]")
     parser.add_argument('-m', '--mapping',
         metavar='mapping.json',
         dest='map_file',
@@ -315,23 +324,27 @@ def main():
         type=restricted_float,
         default=0,
         help="minimum identity threshold (0-1) required to retain a hit "
-            "[default: 0]")
+            "[default: 0]. When multiple HSPs per subject encountered, "
+            "identity is calculated as the total number of identical matches "
+            "divided by the total alignment length")
     screen_method.add_argument('-s', '--similarity',
         metavar='[0.0-1.0]',
         dest="similarity",
         type=restricted_float,
         default=0,
         help="minimum alignment similarity threshold (0-1) required to retain "
-            "a hit. Sequence similarity is calculated as the sum of identical "
-            "matches divided by the sum of alignment lengths for all HSPs per "
-            "subject [default: 0]")
+            "a hit [default: 0]. Sequence similarity is calculated as the "
+            "fraction of the query sequence covered by the alignment with "
+            "identical matches to the subject sequence. If multiple HSPs per "
+            "subject, identity is first calculated as in -i/--identity. "
+            "Requires the field specifiers 'qcovs' and 'qlen'")
     screen_method.add_argument('-c', '--coverage',
         metavar='[0.0-1.0]',
         dest="coverage",
         type=restricted_float,
         default=0,
         help="minimum coverage per subject threshold (0-1) required to retain "
-            "a hit [default: 0]")
+            "a hit [default: 0]. Requires the field specifier 'qcovs'")
     screen_method.add_argument('-l', '--length',
         metavar='LENGTH',
         dest='aln_len',
@@ -346,7 +359,8 @@ def main():
             "a list of one or more SNPS with format <wild-type "
             "residue><position><mutant residue> (e.g. A254G). Argument must "
             "be used in conjunction with -m/--mapping. Screening for SNPs "
-            "will be performed after alignment quality screening")
+            "will be performed after alignment quality screening and requires "
+            "the field specifiers 'qseq' and 'sseq'")
     output_control = parser.add_argument_group(title="output control options")
     output_control.add_argument('--defaults',
         dest='default_format',
@@ -358,16 +372,20 @@ def main():
     args = parser.parse_args()
 
     if args.snp_field and not args.map_file:
-        parser.error("error: -m/--mapping required when -a/--alleles is "
+        parser.error("error: -m/--mapping required whenever -a/--alleles is "
                      "supplied")
 
     if args.score_field and not args.map_file:
-        parser.error("error: -m/--mapping required when -b/--bitscore is "
+        parser.error("error: -m/--mapping required whenever -b/--bitscore is "
                      "supplied")
     
     if args.coverage and not ("qcovs" in args.format):
-        parser.error("error: field specifier 'qcovs' required when argument "
+        parser.error("error: field specifier 'qcovs' required whenever "
             "-c/--coverage is supplied")
+
+    if args.similarity and not ("qcovs" in args.format):
+        parser.error("error: field specifier 'qcovs' required whenever "
+            "-s/--similarity is supplied")
 
     # Output run information
     all_args = sys.argv[1:]
@@ -398,7 +416,7 @@ def main():
     score_field = args.score_field
     snp_field = args.snp_field
     e_thresh = args.evalue
-    id_thresh = args.identity
+    id_thresh = args.identity * 100
     len_thresh = args.aln_len
     sim_thresh = args.similarity * 100
     cov_thresh = args.coverage * 100
