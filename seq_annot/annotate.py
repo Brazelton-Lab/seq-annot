@@ -50,7 +50,7 @@ __author__ = "Christopher Thornton"
 __license__ = 'GPLv3'
 __maintainer__ = 'Christopher Thornton'
 __status__ = "Alpha"
-__version__ = "0.5.8"
+__version__ = "0.5.9"
 
 
 def do_nothing(*args):
@@ -98,16 +98,6 @@ def main():
         default='ID',
         help="attribute name used to match GFF3 entries to sequences from the "
             "homology search [default: ID]")
-    parser.add_argument('-s', '--specifiers',
-        dest="format",
-        action=ParseSeparator,
-        sep=",",
-        default=["qaccver", "saccver", "pident", "length", "mismatch", 
-            "gapopen", "qstart", "qend", "sstart", "send", "evalue", 
-            "bitscore"], 
-        help="input alignment format, ordered by field specifier [default: "
-            "qaccver, saccver, pident, length, mismatch, gapopen, qstart, "
-            "qend, sstart, send, evalue, bitscore]")
     parser.add_argument('-f', '--fields',
         metavar='FIELD [,FIELD,...]',
         dest='fields',
@@ -130,6 +120,17 @@ def main():
         help="feature type (3rd column in GFF file) to annotate [default: "
             "annotate features of all type]. All features of other type will "
             "be ignored")
+    b6_parser = parser.add_argument_group(title="B6 input options")
+    b6_parser.add_argument('-s', '--specifiers',
+        dest="format",
+        action=ParseSeparator,
+        sep=",",
+        default=["qaccver", "saccver", "pident", "length", "mismatch", 
+            "gapopen", "qstart", "qend", "sstart", "send", "evalue", 
+            "bitscore"], 
+        help="input order of B6 field specifiers [default: "
+            "qaccver, saccver, pident, length, mismatch, gapopen, qstart, "
+            "qend, sstart, send, evalue, bitscore]")
     hmm_parser = parser.add_argument_group(title="HMM input options")
     hmm_parser.add_argument('--reverse',
         action='store_true',
