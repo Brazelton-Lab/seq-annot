@@ -355,6 +355,8 @@ def get_value_str(entry: dict, field: str):
         field_value = ';'.join([i.translate(escape_map) for i in field_value])
     elif value_type == str_type:
         field_value = field_value.translate(escape_map)
+    else:
+        field_value = str(field_value)
 
     if not field_value:
         field_value = 'NA'
