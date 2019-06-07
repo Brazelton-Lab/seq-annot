@@ -2,7 +2,7 @@
 from setuptools import setup
 
 setup(name='seq-annot',
-      version='0.7.8',
+      version='0.8.0',
       packages=['seq_annot',],
       description='Tools that fascilitate the annotation and functional '
           'comparison of metagenomes',
@@ -24,7 +24,7 @@ setup(name='seq-annot',
       license='GPLv3',
       include_package_data=True,
       zip_safe=False,
-      install_requires=['bio_utils', 'HTSeq', 'arandomness'],
+      install_requires=['bio_utils', 'HTSeq'],
       entry_points={
           'console_scripts': [
               'compare_features = seq_annot.compare:main',
@@ -33,7 +33,8 @@ setup(name='seq-annot',
               'screen_features = seq_annot.screen:main',
               'combine_features = seq_annot.combine:main',
               'reldb = seq_annot.reldb:main',
-              'colocate_features = seq_annot.colocate:main'
+              'colocate_features = seq_annot.colocate:main',
+              'combine_abunds = seq_annot.abunds:main'
           ]
       }
       )
