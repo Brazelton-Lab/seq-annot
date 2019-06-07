@@ -38,11 +38,10 @@ from __future__ import print_function
 
 import argparse
 from collections import OrderedDict
-import json
 import numpy as np
 import os
 from seq_annot.argparse import *
-from seq_annot.seqio import open_io, write_io, FormatError
+from seq_annot.seqio import *
 from statistics import mean, median
 import sys
 import textwrap
@@ -52,7 +51,7 @@ __author__ = 'Christopher Thornton'
 __license__ = 'GPLv3'
 __maintainer__ = 'Christopher Thornton'
 __status__ = "Alpha"
-__version__ = '0.5.3'
+__version__ = '0.6.2'
 
 
 def occurrence(values: list):
@@ -94,21 +93,31 @@ def main():
         sep=',',
         help="comma-separated list of feature IDs. Only those features "
              "in the list will be output [default: output all]")
-    parser.add_argument('-m', '--method',
+    exclusive = parser.add_mutually_exclusive_group()
+    exclusive.add_argument('-m', '--method',
         metavar='METHOD',
         dest='method',
         default='sum',
-        choices=["sum", "mean", "median", "occur", "add"],
+        choices=["sum", "mean", "median", "occur"],
         help="method for combining values, on a per feature basis, when input "
-             "files contain more than two columns. Available options are add, "
-             "sum, mean, median, and occur(ence) [default: sum]. If method is "
-             "add, cells in the input tables will be added together. Adding "
-             "cell values requires that the tables have equal dimensions. All "
-             "other methods act on table rows")
+             "files contain more than two columns. Available options are sum, "
+             "mean, median, and occur(ence) [default: sum]. Methods act on "
+             "table rows")
+    exclusive.add_argument('--add',
+        action='store_true',
+        help="add cells together instead of combining cells by row when input "
+            "files contain more than two columns. Adding cell values requires "
+            "that all input tables have equal dimensions.")
+    parser.add_argument('--total',
+        action='store_true',
+        help="output sample totals abundances instead of per feature")
     parser.add_argument('--version',
         action='version',
         version='%(prog)s ' + __version__)
     args = parser.parse_args()
+
+    if args.add and args.total:
+        parser.error("flags --add and --total should not be used together")
 
     # Speedup trick
     list_type = type(list())
@@ -125,6 +134,7 @@ def main():
     # Assign variables based on user input
     out_h = args.out
     infiles = args.csvs
+    add_cells = args.add
 
     if args.method == "mean":
         method = mean
@@ -132,16 +142,14 @@ def main():
         method = median
     elif args.method == "occur": 
         method = occurrence
-    elif args.method == "add": 
-        method = None
     else:
         method = sum
 
-    if args.method == "add":
+    if add_cells:
         if args.names:
             print("warning: argument -n/--names ignored when combining method "
                 "is set to 'add'", file=sys.stderr)
-        colnames = []
+        colnames = None
     else:
         colnames = args.names if args.names else [os.path.basename(i) for i \
             in args.csvs]
@@ -153,15 +161,15 @@ def main():
     abundances = OrderedDict()
     for position, infile in enumerate(infiles):
         with open_io(infile, mode='rb') as in_h:
-            # Check column headers when method is 'add'
-            if not method:
+            # Check column headers when adding cells
+            if add_cells:
                 header = in_h.readline()
                 header = header.decode('utf-8')
                 header = header.rstrip().split('\t')[1:]
                 if colnames:
                     if header != colnames:
-                        print("{}, line 0: file headers must match whenever "
-                            "combining methid is set to 'add'"\
+                        print("error: {}, line 0: file headers must match "
+                            "when adding cells of the input tables together"\
                             .format(csv_file), file=sys.stderr)
                         sys.exit(1)
                 else:
@@ -190,13 +198,15 @@ def main():
                     if name not in rownames:
                         continue
 
+                # Convert values to float
                 try:
                     values = [float(j) for j in values]
                 except ValueError:
-                    raise FormatError("{}, line {!s}: Variables should only "
+                    raise FormatError("{}, line {!s}: Variables must only "
                         "contain numerical values".format(infile, nline))
 
-                if method:
+                if not add_cells:
+                    # Combine cells in a row using desired method
                     value = method(values)
                     try:
                         # Update sample value for existing feature
@@ -208,6 +218,7 @@ def main():
                         abundances[name][position] += value
 
                 else:
+                    # Add table cells together
                     values = np.array(values)
                     try:
                         abundances[name] += values
@@ -222,10 +233,21 @@ def main():
     write_io(out_h, header)
 
     # Output feature abundances by sample
-    for rowname in abundances:
-        row = abundances[rowname]
-        row = '\t'.join(['{:g}'.format(i) for i in row])
-        write_io(out_h, "{}\t{!s}\n".format(rowname, row))
+    if args.total:
+        # Sum features abundances by sample
+        sample_totals = [0 for i in colnames]
+        for rowname in abundances:
+            row = abundances[rowname]
+            sample_totals = [sum(x) for x in zip(sample_totals, row)]
+
+        # Output sample totals
+        sample_totals = '\t'.join(['{:g}'.format(i) for i in sample_totals])
+        write_io(out_h, "Totals\t{}\n".format(sample_totals))
+    else:
+        for rowname in abundances:
+            row = abundances[rowname]
+            row = '\t'.join(['{:g}'.format(i) for i in row])
+            write_io(out_h, "{}\t{}\n".format(rowname, row))
 
     # Output statistics
     f_totals = len(abundances)
