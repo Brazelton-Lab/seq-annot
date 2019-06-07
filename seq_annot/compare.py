@@ -2,9 +2,6 @@
 """
 Compare annotated features across samples.
 
-Usage:
-    compare_features in.csv [in.csv ...]
-
 Required input is one or more tabular files of feature characteristics. Each 
 input file should be composed of two or more columns, with the first column 
 consisting of feature IDs. Subsequent columns should be numerical variables 
@@ -15,7 +12,8 @@ taking the mean, median, and occurrence of each row or adding cell values.
 
 The compression algorithm is automatically detected for input files based on
 the file extension. To compress output, add the appropriate file extension
-to the output file name (e.g. .gz, .bz2).
+to the output file name (e.g. .gz, .bz2). Leave off '--out' to direct output 
+to standard output (stdout).
 
 Copyright:
 
