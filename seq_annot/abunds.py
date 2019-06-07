@@ -50,7 +50,7 @@ __author__ = "Christopher Thornton"
 __license__ = 'GPLv3'
 __maintainer__ = 'Christopher Thornton'
 __status__ = "Alpha"
-__version__ = "0.0.6"
+__version__ = "0.0.7"
 
 
 def main():
@@ -74,7 +74,6 @@ def main():
     parser.add_argument('-a', '--attr',
         metavar='TAG',
         dest='attr',
-        default="Alias",
         help="attribute tag used to combine feature abundances [default: "
             "None]. If left off, abundances will be combined for a given "
             "genomic region")
