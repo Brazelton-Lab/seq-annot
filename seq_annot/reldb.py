@@ -45,7 +45,7 @@ __author__ = 'Christopher Thornton'
 __license__ = 'GPLv3'
 __maintainer__ = 'Christopher Thornton'
 __status__ = "Alpha"
-__version__ = '0.4.4'
+__version__ = '0.4.6'
 
 
 def parse_mod_args(argument, modtype):
@@ -287,12 +287,12 @@ def main():
     # Output modified database
     if as_csv:
         # Output CSV header
-        output_fields = sorted(set(all_fields) - set(merge_field)) if merge_field else all_fields
-        header = "#ID\t{}\n".format("\t".join(output_fields))
+        header = "ID\t{}\n".format("\t".join(fields))
         write_io(out_h, header)
 
         for entry in mapping:
-            write_io(out_h, "{}\n".format(entry_as_csv(entry, mapping[entry])))
+            write_io(out_h, "{}\n".format(entry_as_csv(entry, mapping[entry], \
+                fields=fields)))
     else:
         json.dump(mapping, out_h, sort_keys=True, indent=4, \
             separators=(',', ': '))
