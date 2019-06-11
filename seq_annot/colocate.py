@@ -54,7 +54,7 @@ __author__ = 'Christopher Thornton'
 __license__ = 'GPLv3'
 __maintainer__ = 'Christopher Thornton'
 __status__ = "Beta"
-__version__ = '0.4.3'
+__version__ = '0.4.4'
 
 class FeatureNotFound(Exception):
     """A simple exception that is raised when an feature cannot be found on
@@ -519,7 +519,7 @@ def main():
     args = parser.parse_args()
 
     # Argument sanity checks
-    if (args.in_fasta or args.counts) and not args.out_dist:
+    if (args.in_fasta or args.in_count) and not args.out_dist:
         parser.error("error: argument -d/--out-dist must be supplied whenever "
             "arguments -f/--fasta or -c/--count are used")
 
