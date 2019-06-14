@@ -26,6 +26,202 @@ class InputError(Exception):
         Exception.__init__(self,*args,**kwargs)
 
 
+class FeatureNotFound(Exception):
+    """A simple exception that is raised when an feature cannot be found on
+    a genomic region
+    """
+    def __init__(self,*args,**kwargs):
+        Exception.__init__(self,*args,**kwargs)
+
+
+class GenomicRegion:
+    """Class to store all feature annotations of a single contiguous genomic
+    region
+
+    Attributes:
+        seqid (str): ID of the genomic region (e.g. contiguous sequence,
+            scaffold, or genome)
+
+        length (int): length of the genomic region in bp
+
+        size (int): size of the genomic region in number of features predicted
+            along its length
+
+        cargo (dict): dictionary of features contained within the genomic
+            region
+    """
+
+    def __init__(self):
+        """Initialize variables to store information on the genomic region"""
+
+        self.seqid = None
+        self.length = None
+        self.size = None
+        self.cargo = {}
+
+    def distance(self, f1, f2):
+        """Calculate the physical distance in bp between two features
+        contained on the genomic region
+
+        Args:
+            f1 (str): name of the first feature contained within the genomic
+                region
+
+            f2 (str): name of the second feature contained within the genomic
+                region
+
+        Returns:
+            int: physical distance in base-pairs between the two features
+        """
+
+        try:
+            entry1 = self.cargo[f1]
+            entry2 = self.cargo[f2]
+        except KeyError as e:
+            raise FeatureNotFound("feature {} not found on genomic region {}"\
+                .format(e, self.seqid))
+
+        if self.overlaps(f1, f2):  #overlapping features have zero distance
+            return(0)
+
+        iv1 = (entry1.start, entry1.end)
+        iv2 = (entry2.start, entry2.end)
+
+        # Calculate distance between features
+        distance = min([abs(min(np.asarray(iv1) - i)) for i in iv2] + \
+            [abs(min(np.asarray(iv2) - i)) for i in iv1])
+
+        return(distance)
+
+    def bounds(self, f1, f2, stranded: bool=False):
+        """Determine if a genomic feature is bounded by another. A feature is
+        considered bounded if its interval (determined by the start and end
+        positions on the genomic region) is fully contained within the
+        interval of another feature
+
+        Args:
+            f1 (str): name of cargo feature possibly contained within the
+                second
+
+            f2 (str): name of cargo feature possibly containing the first
+
+            stranded (bool): a feature cannnot be bounded by another if on
+                different strands [default: False]
+
+        Returns:
+            bool: True if f1 is bounded by f2, else False
+        """
+        try:
+            entry1 = self.cargo[f1]
+            entry2 = self.cargo[f2]
+        except KeyError as e:
+            raise FeatureNotFound("feature {} not found on genomic region {}"\
+                .format(e, self.seqid))
+
+        # Determine if features reside on the same strand
+        if stranded and ((entry1.strand == '+' and entry2.strand == '-') or \
+            (entry1.strand == '-' and entry2.strand == '+')):
+            return(False)  #feature is unbounded if on different strands
+
+        iv1 = set(range(entry1.start, entry1.end + 1))
+        iv2 = set(range(entry2.start, entry2.end + 1))
+
+        return(iv1.issubset(iv2))
+
+    def overlaps(self, f1, f2, stranded: bool=False):
+        """Determine if the intervals of two features contained on a genomic
+        region overlap
+
+        Args:
+            f1 (str): name of feature in genomic region
+
+            f2 (str): name of different feature in genomic region
+
+            stranded (bool): don't allow features to be considered overlapping
+                if on different strands [default: False]
+
+        Returns:
+            bool: True if the intervals of f1 and f2 overlap, else False
+        """
+
+        try:
+            entry1 = self.cargo[f1]
+            entry2 = self.cargo[f2]
+        except KeyError as e:
+            raise FeatureNotFound("feature {} not found on genomic region {}"\
+                .format(e, self.seqid))
+
+        # Determine if features reside on the same strand
+        if stranded and ((entry1.strand == '+' and entry2.strand == '-') or \
+            (entry1.strand == '-' and entry2.strand == '+')):
+            return(False)  #features dont overlap if on different strands
+
+        iv1 = set(range(entry1.start, entry1.end + 1))
+        iv2 = set(range(entry2.start, entry2.end + 1))
+
+    def intersect(self, names):
+        """Find the intersection between the cargo features contained on the
+        genomic region and a set of feature names
+
+        Args:
+            names (list): list of feature names
+
+        Returns:
+            list: cargo feature IDs with corresponding elements in names
+        """
+        intersection = []
+        # Populate list of cargo features found in set names
+        for feature_id in self.cargo:
+            feature = feature_id.split("_", 1)[0]
+            if feature in names:
+                intersection.append(feature_id)
+
+        return(intersection)
+
+    def order(self):
+        """Order cargo features by start position on the genomic region
+
+        Returns:
+            list: cargo feature IDs ordered by position
+        """
+        positions = {}
+        for feature_id in self.cargo:
+            start = self.cargo[feature_id].start
+
+            if not start in positions:
+                positions[start] = [feature_id]
+            else:  
+                positions[start].append(feature_id)
+
+        ids = []
+        for pos in sorted(positions):
+            for ident in positions[pos]:
+                ids.append(ident)
+
+        return(ids)
+
+    def add_cargo(self, entry, attr):
+        """Populate dictionary of cargo features by parsing GFF3Entry objects
+
+        Args:
+            entry (class): GFF3Entry object
+
+            attr (str): attribute to use as the feature identifier
+        """
+        try:
+            feature = entry.attributes[attr]
+        except KeyError:  #feature doesn't have proper attribute tag
+            feature = "UNKNOWN"
+            warn("record {} does not have attribute tag '{}'"\
+                .format(entry.seqid, attr))
+
+        # Create unique identifier for feature
+        identifier = "{}_{}".format(feature, len(self.cargo) + 1)
+
+        # Populate dictionary of cargo with new feature
+        self.cargo[identifier] = entry
+
+
 class Homolog:
     """A class to store homology search results. Provides support for the 
     output formats of different search methods, including the B6 format of 
