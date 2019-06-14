@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 """
-Combine GFF3 files, resolving any overlap conflicts through a hierarchy of 
-precedence determined by input order.
+Combine GFF3 files, resolving any overlap conflicts either through a hierarchy 
+of precedence determined by input order or the score column of the GFF files.
 
 Usage:
     combine_features [-o out.gff] in.gff [in.gff ...]
@@ -39,7 +39,7 @@ import argparse
 from bio_utils.iterators import GFF3Reader
 import os
 from seq_annot.argparse import *
-from seq_annot.seqio import open_io, write_io
+from seq_annot.seqio import *
 import sys
 import textwrap
 from time import time
@@ -48,7 +48,7 @@ __author__ = 'Christopher Thornton'
 __license__ = 'GPLv3'
 __maintainer__ = 'Christopher Thornton'
 __status__ = "Alpha"
-__version__ = '0.2.1'
+__version__ = '0.3.3'
 
 
 def do_nothing(args):
@@ -69,25 +69,17 @@ def main():
         default=sys.stdout,
         help="output combined features in GFF3 format [default: output to "
              "stdout]")
-    parser.add_argument('--precedence',
-        dest='precedence',
-        action='store_true',
-        help="resolve feature overlap using input file order to determine "
-             "feature precedence")
-    parser.add_argument('--preserve',
-        dest='preserve_within',
-        action='store_true',
-        help="preserve features if they overlap within a GFF file")
-    parser.add_argument('--stranded',
-        dest='stranded',
-        action='store_true',
-        help="preserve features if they overlap, but only on different strands")
-    parser.add_argument('-d', '--discarded',
+    parser.add_argument('-d', '--discards',
         metavar='out.gff',
         action=Open,
         mode='wb',
         help="output features in GFF3 format discarded due to overlapping "
              "intervals")
+    parser.add_argument('-c', '--conflict',
+        metavar='[order|score]',
+        choices=["score", "order"],
+        help="method used to resolve conflicting feature annotations [default: "
+            "score]")
     parser.add_argument('--version',
         action='version',
         version='%(prog)s ' + __version__)
@@ -104,17 +96,15 @@ def main():
 
     # Assign variables
     out_h = args.out
-    out_d = args.discarded.write if args.discarded else do_nothing
-
-    no_overlaps = args.precedence
-    allow_diff_strands = args.stranded
+    out_d = args.discards.write if args.discards else do_nothing
+    res_method = args.conflict
 
     gff_totals = 0
     o_totals = 0
     p_totals = 0
     ind_totals = {}  #store individual GFF3 feature totals
 
-    uniques = {}  #store unique features
+    regions = {}  #for storing features residing on genomic regions
     file_order = {}
     # Output unique features
     for file_number, gff in enumerate(args.gffs):
@@ -125,13 +115,13 @@ def main():
         with open_io(gff) as gff_h:
             gff_reader = GFF3Reader(gff_h)
 
-            for feature in gff_reader.iterate():
+            for entry in gff_reader.iterate():
                 try:
-                    chrom_id = feature.seqid
+                    chrom_id = entry.seqid
                 except AttributeError:
-                    if feature.startswith('##'):  #headers
+                    if entry.startswith('##'):  #headers
                         continue
-                    elif feature.startswith('#'):
+                    elif entry.startswith('#'):
                         continue  #comments
                     else:
                         line_number = gff_reader.current_line
@@ -144,65 +134,59 @@ def main():
                 ind_totals[gff_base] += 1
 
                 try:
-                    chrom = uniques[chrom_id]
-                except KeyError:  # First feature encountered at given pos
+                    ident = entry.attributes['ID']
+                except KeyError:
+                    line_number = gff_reader.current_line
+                    raise FormatError("{}, line {!s}: ID is a required GFF "
+                        "attribute".format(gff_base, line_number))
+
+                try:
+                    chrom = regions[chrom_id]
+                except KeyError:  # First time encountering genomic region
                     p_totals += 1
-                    uniques[chrom_id] = [(file_number, feature)]
+                    regions[chrom_id] = GenomicRegion()
+                    regions[chrom_id].seqid = chrom_id
+                    regions[chrom_id].cargo[ident] = entry
                     continue
-
-                if no_overlaps:
-                    is_unique = True  #assume feature is unique
-
-                    # Check if feature falls within the interval of another
-                    for item in chrom:
-                        chrom_feat = item[1]
-
-                        # Allow overlap for features in the same GFF3 file
-                        chrom_pos = item[0]
-                        if file_number == chrom_pos and args.preserve_within:
-                            continue
-
-                        if feature.overlap(chrom_feat):
-                            o_totals += 1
-                            is_unique = False
-                            break  #found overlap, no need to continue
-
-                    if is_unique:
-                        # Feature does not fall within the interval of another, so 
-                        # add to uniques
-                        p_totals += 1
-                        uniques[chrom_id].append((file_number, feature))
-                    else:
-                        out_d(feature.write().encode('utf-8'))
                 else:
-                    p_totals += 1
-                    uniques[chrom_id].append((file_number, feature))
+                    cargo = regions[chrom_id].cargo
+
+                if ident in cargo:
+                    o_totals += 1
+                    if res_method == "order":  #feature already annotated
+                        continue
+                    else:
+                        # Resolve conflicting annotation using score column
+                        score = entry.score
+                        prev_score = cargo[ident].score
+                        if score <= prev_score:  #existing entry is better
+                            continue
+                        else:  #existing entry worse than current entry
+                            cargo[ident] = entry
+                else:
+                    cargo[ident] = entry
 
     # Output combined GFF3
     header = "##gff-version 3\n"
     write_io(out_h, header)
 
-    id_lookup = {}
-    for chrom in sorted(uniques):
-        chrom_feature = 0
-        for item in uniques[chrom]:
-            chrom_feature += 1
-            entry = item[1]
+    for chrom_id in sorted(regions):
+        chrom = regions[chrom_id]
+        for feature_id in chrom.order():
+            cargo = chrom.cargo[feature_id]
 
-            write_io(out_h, entry.write())
+            write_io(out_h, cargo.write())
 
     # Calculate and print statistics
     print("", file=sys.stderr)
     print("Features processed:", file=sys.stderr)
-    print("  - feature totals:\t{!s}".format(gff_totals), file=sys.stderr)
-    print("  - features merged:\t{!s}".format(p_totals), file=sys.stderr)
-    if args.precedence:
-        print("  - overlaps discarded:\t{!s}"\
-              .format(o_totals), file=sys.stderr)
+    print("  - genomic regions:\t{!s}".format(p_totals), file=sys.stderr)
+    print("  - entries encountered:\t{!s}".format(gff_totals), file=sys.stderr)
+    print("  - conflicts discarded:\t{!s}".format(o_totals), file=sys.stderr)
     print("GFFs processed:", file=sys.stderr)
     print("  - files combined:\t{!s}".format(len(args.gffs)), file=sys.stderr)
     for gff in ind_totals:
-        print("    - features in {}:\t{!s}".format(gff, ind_totals[gff]), \
+        print("    - entries in {}:\t{!s}".format(gff, ind_totals[gff]), \
               file=sys.stderr)
 
     # Calculate and print program run-time
