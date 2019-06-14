@@ -5,6 +5,8 @@
 from bio_utils.iterators import B6Reader, B6Entry
 from bz2 import BZ2File
 from gzip import GzipFile
+import logging
+import numpy as np
 from lzma import LZMAFile
 import io
 import os
@@ -212,7 +214,7 @@ class GenomicRegion:
             feature = entry.attributes[attr]
         except KeyError:  #feature doesn't have proper attribute tag
             feature = "UNKNOWN"
-            warn("record {} does not have attribute tag '{}'"\
+            logging.warning("record {} does not have attribute tag '{}'"\
                 .format(entry.seqid, attr))
 
         # Create unique identifier for feature

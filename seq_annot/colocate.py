@@ -47,9 +47,6 @@ import sys
 import textwrap
 from time import time
 
-warn = logging.warning
-logging.basicConfig(level=logging.ERROR)
-
 __author__ = 'Christopher Thornton'
 __license__ = 'GPLv3'
 __maintainer__ = 'Christopher Thornton'
@@ -96,7 +93,7 @@ def output_dist(handle, giv, set1, set2, abunds={}, outall=False):
         try:
             feature_id = cargo[element].attributes['ID']
         except KeyError:
-            warn("Feature {} on genomic region {} does not contain the 'ID' "
+            logging.warning("Feature {} on genomic region {} does not contain the 'ID' "
                 "attribute required for incorportaion of abundance"\
                 .format(element, cargo[element].seqid))
             feature_id = 'NA'
@@ -341,6 +338,7 @@ def main():
         action='version',
         version='%(prog)s ' + __version__)
     args = parser.parse_args()
+    logging.basicConfig(level=logging.ERROR)
 
     # Argument sanity checks
     if (args.in_fasta or args.in_count) and not args.out_dist:
