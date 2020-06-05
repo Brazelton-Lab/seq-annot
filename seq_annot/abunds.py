@@ -50,7 +50,7 @@ __author__ = "Christopher Thornton"
 __license__ = 'GPLv3'
 __maintainer__ = 'Christopher Thornton'
 __status__ = "Alpha"
-__version__ = "0.2.2"
+__version__ = "0.2.4"
 
 def group_from_gff(infile, id_tag='ID', attr_tag='Alias'):
     """Obtain grouping information from GFF file
@@ -151,9 +151,9 @@ def main():
         help="matching term is a substring of the feature of length LEN")
     group2_mut = group2.add_mutually_exclusive_group()
     group2_mut.add_argument('-m', '--method',
-        metavar='[sum|mean|median|occurrence]',
+        metavar='[sum|mean|median|occur]',
         dest='method',
-        choices=["sum", "mean", "median", "occurrence"],
+        choices=["sum", "mean", "median", "occur"],
         help="method used to combine feature abundance values [default: sum]")
     group2_mut.add_argument('-c', '--cat',
         metavar='SEP',
@@ -267,9 +267,9 @@ def main():
                     .format(infile, nline))
 
             try:
-                abunds[category] += float(value)
+                abunds[category].append(float(value))
             except KeyError:
-                abunds[category] = float(value)
+                abunds[category] = [float(value)]
             except ValueError:
                 infile = os.path.basename(args.in_abund)
                 raise FormatError("{}, line {!s}: abundance value must be "
@@ -278,7 +278,7 @@ def main():
     # Output merged abundances
     if not args.cat:
         for category in abunds:
-            final_value = method(cat_abunds[category])
+            final_value = method(abunds[category])
             write_io(out_h, "{}\t{!s}\n".format(category, final_value))
 
     # Output statistics
