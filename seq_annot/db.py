@@ -23,9 +23,11 @@ def load_dbs(infiles, fields:list=None, csv:bool=False):
         dict: relational database loaded as a dictionary
     """
 
+    # Handle case where infiles is single file
     if type(infiles) == type(str()):
         infiles = [infiles]
 
+    # Load mapping files into dictionary
     mapping = {}
     for map_file in infiles:
         in_h = open_io(map_file)
