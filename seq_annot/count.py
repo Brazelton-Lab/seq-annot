@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-Estimate abundance for genomic features.
+Estimate genomic feature abundances.
 
 Required inputs are a GFF3 file of annotated features and an alignments file 
 in SAM or BAM format. Optional input is one or more relational databases 
@@ -43,6 +43,7 @@ import json
 import os
 from seq_annot.argparse import *
 from seq_annot.seqio import open_io, write_io
+from seq_annot.db import load_dbs
 from statistics import mean
 import sys
 import textwrap
@@ -52,7 +53,7 @@ __author__ = 'Christopher Thornton'
 __license__ = 'GPLv3'
 __maintainer__ = 'Christopher Thornton'
 __status__ = "Beta"
-__version__ = '1.5.8'
+__version__ = '1.6.0'
 
 
 class UnknownChrom(Exception):
@@ -184,7 +185,9 @@ def main():
         metavar='FIELD',
         dest='category',
         help="field in the relational database representing how features "
-             "are categorized")
+        "are categorized. WARNING: if the value type of the selected field "
+        "is a list, then the category abundance totals can be greater than "
+        "the feature abundance totals")
     gff_group = parser.add_argument_group('GFF3 arguments')
     gff_group.add_argument('-t', '--type', 
         metavar='TYPE', 
@@ -388,10 +391,7 @@ def main():
         align_reader = HTSeq.BAM_Reader
 
     if args.map_files:
-        mapping = {}
-        for map_file in args.map_files:
-            json_map = json.load(open_io(map_file))
-            mapping = {**json_map, **mapping}
+        mapping = load_dbs(args.map_files, fields=[category_field], is_csv=False)
     else:
         mapping = None
 
@@ -706,7 +706,9 @@ def main():
                 # Handle case where feature has more than one category, such 
                 # as if a protein sequence is assigned to more than one gene 
                 # family
-                for category in category.split(','):
+                categories = [category] if not type(category) == type(list()) \
+                    else category
+                for category in categories:
                     abundances[category.lstrip()] = \
                         abundances.get(category, 0) + feature_abundance
 

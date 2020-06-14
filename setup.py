@@ -2,7 +2,7 @@
 from setuptools import setup
 
 setup(name='seq-annot',
-      version='0.8.2',
+      version='0.8.3',
       packages=['seq_annot',],
       description='Tools that fascilitate the annotation and functional '
           'comparison of metagenomes',
