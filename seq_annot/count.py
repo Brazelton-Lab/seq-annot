@@ -391,7 +391,7 @@ def main():
         align_reader = HTSeq.BAM_Reader
 
     if args.map_files:
-        mapping = load_dbs(args.map_files, fields=[category_field], is_csv=False)
+        mapping = load_dbs(args.map_files, fields=[category_field], csv=False)
     else:
         mapping = None
 
