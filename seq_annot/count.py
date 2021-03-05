@@ -663,7 +663,7 @@ def main():
                   "reads. Will use sequence length instead.\n", file=sys.stderr)
             calc_length = return_first_arg
         elif are_transcripts and pe_mode:
-            calc_length = calculate_effective_length
+            calc_length = compute_effective_length
         else:
             calc_length = return_first_arg
 
